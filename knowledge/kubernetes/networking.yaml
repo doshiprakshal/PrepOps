@@ -1,0 +1,184 @@
+topic: networking
+display_name: "Kubernetes Networking"
+domain: kubernetes
+category: "Containers & Orchestration"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - kubernetes/pods
+  - kubernetes/services
+  - networking/tcp
+
+learning_objectives:
+  - "Explain the Kubernetes networking model and its four fundamental requirements"
+  - "Describe how CNI plugins implement Pod networking"
+  - "Explain how CoreDNS provides service discovery within the cluster"
+  - "Write and interpret NetworkPolicy rules to control Pod traffic"
+  - "Debug Pod-to-Pod and Pod-to-Service connectivity issues"
+
+key_concepts:
+  - name: "Flat Network Model"
+    summary: "Every Pod gets a unique cluster-wide IP; all Pods can communicate with all other Pods without NAT"
+    production_relevance: critical
+  - name: "CNI (Container Network Interface)"
+    summary: "Plugin standard for implementing Pod networking; examples: Calico, Cilium, Flannel, Weave"
+    production_relevance: critical
+  - name: "CoreDNS"
+    summary: "Cluster DNS server; resolves Service names to ClusterIPs and Pod names in headless Services"
+    production_relevance: critical
+  - name: "NetworkPolicy"
+    summary: "Kubernetes-native firewall rules for controlling ingress/egress traffic to/from Pods"
+    production_relevance: high
+  - name: "Ingress"
+    summary: "L7 HTTP routing rules; requires an Ingress Controller (nginx, Traefik, AWS ALB) to implement"
+    production_relevance: critical
+  - name: "Overlay vs Underlay Networking"
+    summary: "Overlay (VXLAN/IPinIP) encapsulates Pod traffic; underlay uses BGP to route Pod IPs natively"
+    production_relevance: high
+
+common_misconceptions:
+  - "NetworkPolicy is enforced by Kubernetes itself — it requires a CNI that supports it (not all do)"
+  - "A default-deny NetworkPolicy blocks all traffic including DNS — must explicitly allow port 53 to CoreDNS"
+  - "Pods on the same node communicate faster than Pods on different nodes — depends on CNI, not always true"
+  - "Ingress handles all external traffic — it only handles HTTP/HTTPS; TCP/UDP needs other solutions"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "Every Pod has a unique IP address reachable from anywhere in the cluster"
+      - "Pods on the same node can communicate via localhost if in the same Pod, or via Pod IP otherwise"
+      - "CoreDNS resolves service.namespace.svc.cluster.local to the Service ClusterIP"
+      - "CNI plugins are responsible for assigning Pod IPs and setting up networking"
+    key_concepts_to_mention:
+      - "Pod IP"
+      - "CoreDNS"
+      - "CNI"
+      - "flat network"
+
+  intermediate:
+    expected_understanding:
+      - "How CNI plugins assign IPs from a CIDR range and set up routes"
+      - "How to write a NetworkPolicy to restrict ingress/egress"
+      - "What happens when a Pod tries to reach a hostname — DNS query to CoreDNS first"
+      - "The role of kube-proxy vs CNI in Pod vs Service traffic"
+      - "VXLAN overlay networking and its overhead"
+    key_concepts_to_mention:
+      - "NetworkPolicy ingress/egress rules"
+      - "CoreDNS ndots configuration"
+      - "VXLAN / overlay"
+      - "Pod CIDR vs Service CIDR"
+
+  senior:
+    expected_understanding:
+      - "eBPF-based CNI (Cilium) vs iptables-based CNI performance trade-offs"
+      - "BGP-based underlay networking with Calico and why it scales better"
+      - "DNS search domains and ndots — why 5 DNS lookups happen for every name resolution"
+      - "NetworkPolicy limitations — no FQDN-based rules, no L7 without a service mesh"
+      - "Multi-cluster networking patterns: VPC peering, Submariner, Cilium Cluster Mesh"
+    key_concepts_to_mention:
+      - "eBPF"
+      - "BGP peering"
+      - "ndots and DNS lookup chain"
+      - "NetworkPolicy limitations"
+
+  staff:
+    expected_understanding:
+      - "Service mesh (Istio, Cilium) for mTLS, traffic shaping, and observability at scale"
+      - "Network security strategy: defence-in-depth with NetworkPolicy + service mesh + cloud SG"
+      - "Cost of network traffic in cloud environments — cross-AZ and cross-region egress"
+      - "IPv4 exhaustion and IPv6 dual-stack Kubernetes clusters"
+    key_concepts_to_mention:
+      - "service mesh mTLS"
+      - "cross-AZ egress cost"
+      - "dual-stack"
+      - "network observability"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "A Pod cannot reach another Pod in a different namespace. Both are Running. Walk me through your debugging approach."
+  - angle: "Conceptual"
+    prompt: "Explain what happens at the network layer when Pod A on Node 1 sends a packet to Pod B on Node 2."
+  - angle: "Design"
+    prompt: "You need to enforce zero-trust networking in a Kubernetes cluster with 200 namespaces. What is your strategy?"
+  - angle: "Trade-offs"
+    prompt: "Compare Calico BGP mode vs Flannel VXLAN for a 500-node cluster. What are the trade-offs?"
+
+debugging_commands:
+  - command: "kubectl exec <pod> -- curl -v http://<service>.<ns>.svc.cluster.local"
+    purpose: "Test DNS resolution and HTTP connectivity to a Service from inside the cluster"
+  - command: "kubectl exec <pod> -- nslookup <service>.<namespace>.svc.cluster.local"
+    purpose: "Verify CoreDNS is resolving the Service name correctly"
+  - command: "kubectl exec <pod> -- ping <pod-ip>"
+    purpose: "Test raw Pod-to-Pod IP connectivity (ICMP must be allowed)"
+  - command: "kubectl get networkpolicies -n <namespace>"
+    purpose: "List NetworkPolicies that may be blocking traffic"
+  - command: "kubectl describe networkpolicy <name> -n <namespace>"
+    purpose: "Inspect the ingress/egress rules of a specific NetworkPolicy"
+  - command: "kubectl logs -n kube-system -l k8s-app=kube-dns"
+    purpose: "Check CoreDNS logs for DNS resolution errors"
+
+scenario_seeds:
+  - title: "The DNS Black Hole"
+    setup: "After applying a default-deny NetworkPolicy to a namespace, all Pods can no longer reach any Services — even ones that were working before. No application changes were made."
+    hint: "Default-deny blocks egress to port 53 (CoreDNS). DNS resolution fails, so all service names fail to resolve."
+    difficulty: intermediate
+
+  - title: "Cross-Namespace Blocked"
+    setup: "Service A in namespace 'frontend' cannot reach Service B in namespace 'backend'. Both namespaces have NetworkPolicies. Everything was working last week."
+    hint: "A new NetworkPolicy in 'backend' namespace restricts ingress to only pods with label app=backend. Frontend pods don't have this label."
+    difficulty: intermediate
+
+  - title: "Intermittent DNS Timeouts"
+    setup: "Production pods experience random DNS resolution timeouts every few minutes. Restarting CoreDNS pods temporarily fixes it. Node count recently increased from 50 to 200."
+    hint: "CoreDNS is under-resourced for the new cluster size. conntrack table is also filling up with DNS UDP connections."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows NetworkPolicy requires a supporting CNI to be enforced"
+      - "Can explain the DNS lookup chain including ndots and search domains"
+      - "Understands the difference between overlay and underlay networking"
+      - "Can write a basic NetworkPolicy with correct ingress/egress structure"
+    red_flags:
+      - "Thinks Kubernetes itself enforces NetworkPolicy without CNI support"
+      - "Doesn't know that default-deny blocks DNS traffic"
+      - "Cannot distinguish CNI role from kube-proxy role"
+
+  reasoning:
+    strong_signals:
+      - "Starts debugging from the innermost layer (Pod-to-Pod IP) then outward"
+      - "Checks NetworkPolicy and DNS separately"
+    red_flags:
+      - "Assumes the problem is application-level without checking network path"
+
+  production_thinking:
+    strong_signals:
+      - "Mentions blast radius of a misconfigured NetworkPolicy"
+      - "Considers cross-AZ network costs when designing multi-AZ clusters"
+    red_flags:
+      - "Applies default-deny without testing DNS and essential traffic first"
+
+  communication:
+    strong_signals:
+      - "Can trace the exact packet path from Pod to Pod including CNI and iptables"
+    red_flags:
+      - "Vague about how CNI plugins actually work"
+
+follow_up_questions:
+  - trigger: "User mentions NetworkPolicy"
+    question: "Write a NetworkPolicy that allows ingress to a Pod on port 8080 only from Pods with label 'app=frontend' in the same namespace, and allows all egress."
+  - trigger: "User mentions CoreDNS"
+    question: "A Pod does 5 DNS lookups for every single service name it resolves. Why? How do you reduce this?"
+  - trigger: "User mentions Cilium or eBPF"
+    question: "What specific advantages does an eBPF-based CNI give you over an iptables-based CNI at scale?"
+
+references:
+  - title: "Kubernetes Networking Model"
+    url: "https://kubernetes.io/docs/concepts/cluster-administration/networking/"
+  - title: "Network Policies"
+    url: "https://kubernetes.io/docs/concepts/services-networking/network-policies/"
+  - title: "CoreDNS"
+    url: "https://kubernetes.io/docs/tasks/administer-cluster/coredns/"

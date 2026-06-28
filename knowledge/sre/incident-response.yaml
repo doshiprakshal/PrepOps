@@ -1,0 +1,167 @@
+topic: incident-response
+display_name: "Incident Response"
+domain: sre
+category: "Engineering Practices"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - sre/slos-error-budgets
+
+learning_objectives:
+  - "Execute structured incident response: detect → triage → mitigate → resolve → postmortem"
+  - "Apply the correct communication cadence during an incident"
+  - "Write a blameless postmortem that drives systemic improvement"
+  - "Design an escalation policy and on-call rotation"
+  - "Define severity levels and their response requirements"
+
+key_concepts:
+  - name: "Incident Lifecycle"
+    summary: "Detection → Triage → Mitigation → Resolution → Postmortem — each phase has clear goals and handoff criteria"
+    production_relevance: critical
+  - name: "Incident Commander (IC)"
+    summary: "Single person coordinating the response; delegates investigation; controls communication; prevents chaos"
+    production_relevance: critical
+  - name: "Mitigation vs Resolution"
+    summary: "Mitigation stops user impact (rollback, disable feature); resolution fixes root cause. Mitigation comes first."
+    production_relevance: critical
+  - name: "Blameless Postmortem"
+    summary: "Analysis focused on systems and processes, not individual blame; identifies contributing factors and action items"
+    production_relevance: critical
+  - name: "Severity Levels"
+    summary: "P0/SEV1 (all users impacted, immediate), P1/SEV2 (subset impacted), P2/SEV3 (degraded, workaround exists)"
+    production_relevance: high
+  - name: "On-Call Rotation"
+    summary: "Structured pager duty assignment; defined escalation path; ensures coverage without burnout"
+    production_relevance: high
+
+common_misconceptions:
+  - "Fix the root cause first, then mitigate — mitigation (stopping user impact) always comes before root cause analysis"
+  - "Postmortems assign blame — blameless postmortems focus on systems and processes, not individuals"
+  - "Escalation is failure — escalating early when uncertain is the correct response; late escalation causes more damage"
+  - "An incident is over when the service recovers — the incident is not over until the postmortem is complete"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "Incidents have phases: detection, triage, mitigation, resolution"
+      - "Severity levels determine response urgency and team involvement"
+      - "Postmortem documents what happened and how to prevent recurrence"
+      - "On-call rotation ensures someone is always responsible for production"
+    key_concepts_to_mention:
+      - "incident phases"
+      - "severity levels"
+      - "postmortem"
+      - "on-call"
+
+  intermediate:
+    expected_understanding:
+      - "Incident Commander role: coordinates response, does not investigate personally"
+      - "Mitigation before root cause: rollback, disable, divert traffic — stop the bleeding first"
+      - "Communication cadence: status updates every 15-30 minutes during active incident"
+      - "Timeline reconstruction for postmortem: when did each action happen and what was its effect?"
+      - "Action items from postmortem must have owners and due dates"
+    key_concepts_to_mention:
+      - "Incident Commander"
+      - "mitigation before resolution"
+      - "communication cadence"
+      - "postmortem action items"
+
+  senior:
+    expected_understanding:
+      - "Escalation policy: when to page the next level, who decides severity upgrade"
+      - "Incident classification: P0 = call the CEO, P1 = wake the team lead, P2 = morning brief"
+      - "War room coordination: separate investigation channels, dedicated status channel"
+      - "Contributing factors in postmortem: latent defects, missing alerts, process gaps"
+      - "Tracking postmortem action item completion rate as a team health metric"
+    key_concepts_to_mention:
+      - "escalation policy"
+      - "war room structure"
+      - "contributing factors"
+      - "action item completion rate"
+
+  staff:
+    expected_understanding:
+      - "On-call health: alert volume, false positive rate, hours spent on-call"
+      - "Chaos engineering as proactive incident prevention"
+      - "Incident metrics: MTTD, MTTR, MTTM — which to optimize and why"
+      - "GameDay exercises for practicing incident response"
+    key_concepts_to_mention:
+      - "MTTD / MTTR / MTTM"
+      - "chaos engineering"
+      - "GameDay"
+      - "on-call health metrics"
+
+interview_angles:
+  - angle: "Production scenario"
+    prompt: "You are paged at 3am. The payment service is returning 100% errors. Walk me through your first 15 minutes."
+  - angle: "Design"
+    prompt: "Design an on-call rotation and escalation policy for a team of 8 engineers supporting a P0 service."
+  - angle: "Conceptual"
+    prompt: "What makes a postmortem blameless? What is the difference between a good postmortem and a bad one?"
+  - angle: "Trade-offs"
+    prompt: "You are the IC. You found a likely mitigation (rollback) but it's risky and might cause different errors. Root cause is unclear. What do you do?"
+
+scenario_seeds:
+  - title: "The 3am P0"
+    setup: "03:15 — PagerDuty fires. Checkout service error rate is 95%. Revenue is impacted. You are the first responder. No recent deployments. You have 15 minutes before your lead expects an update."
+    hint: "Immediately check: was there a deployment? Is it a single region or global? Check databases, downstream dependencies. Attempt mitigation (rollback or circuit breaker) while investigating. Page the IC if you can't mitigate in 5 minutes."
+    difficulty: intermediate
+
+  - title: "The Cascading Failure"
+    setup: "A single slow database query caused connection pool exhaustion. The connection pool exhaustion caused an authentication service timeout. Auth timeouts triggered retries. Retries multiplied traffic 10x. Traffic spike caused more database load. Everything is down."
+    hint: "Classic cascading failure. Mitigation: shed load, disable retries, circuit break auth dependency. Root cause: slow query without timeout causing connection starvation. Needs timeout everywhere, circuit breakers, retry budget."
+    difficulty: senior
+
+  - title: "The Wrong Postmortem"
+    setup: "After an outage caused by an engineer misconfiguring a load balancer rule, the postmortem conclusion states: 'Engineer should double-check their work. Training required.' No other action items."
+    hint: "This is a blame-focused postmortem that doesn't address contributing factors: no config validation, no staging environment test, no gradual rollout, no quick rollback mechanism. The real action items are systemic."
+    difficulty: intermediate
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows to mitigate before investigating root cause"
+      - "Can describe the IC role and why one person must coordinate"
+      - "Can explain what makes a postmortem blameless vs blame-focused"
+      - "Knows MTTD/MTTR/MTTM and what each measures"
+    red_flags:
+      - "Would spend 30 minutes finding root cause before attempting mitigation"
+      - "Writes postmortems that assign blame to individuals"
+      - "Cannot explain the difference between mitigation and resolution"
+
+  reasoning:
+    strong_signals:
+      - "Prioritizes user impact reduction over perfect understanding"
+      - "Considers rollback risk vs staying on broken code"
+    red_flags:
+      - "Always recommends rollback without considering whether it's the safe option"
+
+  production_thinking:
+    strong_signals:
+      - "Considers communication to customers and stakeholders during incident"
+      - "Plans for secondary effects of mitigation actions"
+      - "Thinks about what monitoring would have caught this earlier"
+    red_flags:
+      - "Focuses only on technical fix without stakeholder communication plan"
+
+  communication:
+    strong_signals:
+      - "Uses structured communication format: what's down, impact, what we're doing, next update in X minutes"
+    red_flags:
+      - "Vague updates without clear ETA or actions"
+
+follow_up_questions:
+  - trigger: "User mentions postmortem"
+    question: "What specific action items would come out of the postmortem for a cascading failure caused by database connection exhaustion?"
+  - trigger: "User mentions on-call"
+    question: "Your team's alert fatigue is high — engineers are getting paged 10+ times per night for non-actionable alerts. How do you fix this?"
+  - trigger: "User mentions MTTR"
+    question: "Your MTTR is 45 minutes. The board wants it under 10 minutes. What are the top three things you would change?"
+
+references:
+  - title: "Google SRE Book: Managing Incidents"
+    url: "https://sre.google/sre-book/managing-incidents/"
+  - title: "Blameless PostMortems"
+    url: "https://sre.google/sre-book/postmortem-culture/"

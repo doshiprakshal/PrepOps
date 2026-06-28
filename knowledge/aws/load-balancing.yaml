@@ -1,0 +1,167 @@
+topic: load-balancing
+display_name: "AWS Load Balancing"
+domain: aws
+category: "Cloud"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - networking/tcp
+
+learning_objectives:
+  - "Compare ALB, NLB, and CLB and choose the right one for each use case"
+  - "Configure ALB listeners, rules, target groups, and health checks"
+  - "Debug 502, 503, and 504 errors from ALB"
+  - "Explain connection draining and why it matters during deployments"
+  - "Design a load balancing architecture for a multi-tier application"
+
+key_concepts:
+  - name: "Application Load Balancer (ALB)"
+    summary: "L7 HTTP/HTTPS load balancer; content-based routing (path, host, header); WebSocket support"
+    production_relevance: critical
+  - name: "Network Load Balancer (NLB)"
+    summary: "L4 TCP/UDP load balancer; ultra-low latency; static IP; preserves source IP; for non-HTTP protocols"
+    production_relevance: critical
+  - name: "Target Groups"
+    summary: "Collection of targets (instances, IPs, Lambdas, containers) with shared health check configuration"
+    production_relevance: critical
+  - name: "Listener Rules"
+    summary: "ALB routing rules: path-based (/api/* → api-tg), host-based (api.example.com → api-tg), header-based"
+    production_relevance: critical
+  - name: "Connection Draining / Deregistration Delay"
+    summary: "Time ALB waits for in-flight requests to complete before removing a target; default 300s"
+    production_relevance: high
+  - name: "Sticky Sessions"
+    summary: "Session affinity via cookie; routes same client to same target; limits horizontal scaling"
+    production_relevance: medium
+
+common_misconceptions:
+  - "ALB and NLB can be swapped freely — ALB terminates TLS and does HTTP, NLB passes TCP through"
+  - "ALB health checks test the same endpoint as user traffic — health check path is configured separately"
+  - "502 Bad Gateway means the load balancer is broken — 502 usually means the target returned invalid HTTP or closed the connection"
+  - "Connection draining blocks new requests too — draining only affects existing connections to deregistering targets; new requests go to remaining healthy targets"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "Load balancer distributes traffic across multiple instances/targets"
+      - "ALB for HTTP/HTTPS, NLB for TCP/UDP"
+      - "Target groups define which targets receive traffic"
+      - "Health checks remove unhealthy targets from rotation"
+    key_concepts_to_mention:
+      - "ALB / NLB"
+      - "target group"
+      - "health check"
+      - "listener"
+
+  intermediate:
+    expected_understanding:
+      - "ALB listener rules: path-based and host-based routing to multiple target groups"
+      - "HTTP error codes from ALB: 502 (target issue), 503 (no healthy targets), 504 (timeout)"
+      - "Connection draining: prevents dropped requests during deployment"
+      - "ALB access logs for request-level debugging"
+      - "Target group health check: path, port, thresholds"
+    key_concepts_to_mention:
+      - "listener rules"
+      - "502 vs 503 vs 504"
+      - "connection draining / deregistration delay"
+      - "access logs"
+
+  senior:
+    expected_understanding:
+      - "ALB vs NLB for microservices: ALB for gRPC and HTTP/2, NLB for low-latency TCP"
+      - "mTLS at the load balancer for zero-trust ingress"
+      - "ALB weighted target groups for canary deployments"
+      - "Cross-zone load balancing and its implications for AZ-local instance fleets"
+      - "ALB WAF integration for L7 security"
+    key_concepts_to_mention:
+      - "weighted target groups"
+      - "cross-zone load balancing"
+      - "WAF integration"
+      - "gRPC on ALB"
+
+  staff:
+    expected_understanding:
+      - "Global load balancing: AWS Global Accelerator, Route 53 latency routing"
+      - "Cost of ALB at scale: LCU pricing; when NLB is cheaper"
+      - "Load balancing strategy for Kubernetes: ALB Ingress Controller vs NLB for Services"
+      - "Multi-region active-active vs active-passive with load balancers"
+    key_concepts_to_mention:
+      - "Global Accelerator"
+      - "LCU pricing"
+      - "ALB Ingress Controller"
+      - "multi-region load balancing"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "Your ALB is returning 502 errors for 10% of requests. The target instances are healthy according to the ALB. What do you investigate?"
+  - angle: "Debugging"
+    prompt: "After a deployment, users get errors for about 30 seconds then recover. Your health checks are passing. What's happening?"
+  - angle: "Design"
+    prompt: "You have 8 microservices. Each needs to be reachable on the same domain at /api/service-name/*. Design the ALB setup."
+  - angle: "Trade-offs"
+    prompt: "When would you choose NLB over ALB for a service that handles HTTP traffic?"
+
+debugging_commands:
+  - command: "aws elbv2 describe-target-health --target-group-arn <arn>"
+    purpose: "Show health status of all targets in a target group with reason codes"
+  - command: "aws elbv2 describe-load-balancer-attributes --load-balancer-arn <arn>"
+    purpose: "Show ALB attributes including access log configuration and idle timeout"
+  - command: "aws logs filter-log-events --log-group-name <alb-access-logs> --filter-pattern '\"502\"'"
+    purpose: "Find 502 errors in ALB access logs"
+
+scenario_seeds:
+  - title: "502 During Deployment"
+    setup: "During a blue-green deployment, ALB starts returning 502 for all requests to the new (green) target group. The green instances are Running and the ALB shows them as healthy."
+    hint: "The application on green instances starts the HTTP listener 30 seconds after the instance is marked healthy (app startup time). ALB health check hits /health which returns 200 but the main app isn't ready. Need longer health check thresholds or lifecycle hooks."
+    difficulty: intermediate
+
+  - title: "503 During Scale-In"
+    setup: "When the ASG scales in during off-peak hours, users see 30 seconds of 503 errors. The scale-in events perfectly correlate with the errors."
+    hint: "Deregistration delay is set to 0. ALB is removing targets immediately without waiting for in-flight requests to drain. Increase deregistration delay to 30-60 seconds."
+    difficulty: intermediate
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows 502/503/504 distinction and what each means"
+      - "Can explain connection draining and deregistration delay"
+      - "Understands path-based and host-based routing rules"
+      - "Can differentiate ALB vs NLB use cases"
+    red_flags:
+      - "Confuses 502 (target issue) with 503 (no healthy targets)"
+      - "Doesn't know what connection draining is"
+      - "Would use NLB for HTTP path-based routing"
+
+  reasoning:
+    strong_signals:
+      - "Checks target health with specific reason codes before checking instances"
+      - "Uses access logs to correlate error patterns with deployment events"
+    red_flags:
+      - "Goes straight to checking instances without checking load balancer health data"
+
+  production_thinking:
+    strong_signals:
+      - "Mentions connection draining during deployments"
+      - "Considers health check tuning for slow-starting applications"
+    red_flags:
+      - "Designs deployment without accounting for in-flight requests during switchover"
+
+  communication:
+    strong_signals:
+      - "Can trace a request path from client through ALB through target group to instance"
+    red_flags:
+      - "Vague about what the load balancer does between receiving a request and sending it to a target"
+
+follow_up_questions:
+  - trigger: "User mentions target group"
+    question: "What health check path and thresholds would you configure for a Java application that takes 90 seconds to start up?"
+  - trigger: "User mentions sticky sessions"
+    question: "You need sticky sessions for a legacy stateful app. What are the implications for rolling deployments and horizontal scaling?"
+
+references:
+  - title: "ALB Documentation"
+    url: "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/"
+  - title: "NLB Documentation"
+    url: "https://docs.aws.amazon.com/elasticloadbalancing/latest/network/"

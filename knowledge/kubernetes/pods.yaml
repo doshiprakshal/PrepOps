@@ -1,0 +1,217 @@
+topic: pods
+display_name: "Kubernetes Pods"
+domain: kubernetes
+category: "Containers & Orchestration"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - docker/containers
+
+learning_objectives:
+  - "Explain what a Pod is and why it is the smallest deployable unit in Kubernetes"
+  - "Describe the Pod lifecycle phases and what triggers each transition"
+  - "Configure resource requests and limits correctly and explain their effect on scheduling and runtime"
+  - "Debug a failing Pod using kubectl describe, logs, and exec"
+  - "Explain QoS classes and their impact on eviction order"
+
+key_concepts:
+  - name: "Pod Lifecycle"
+    summary: "Pending → Running → Succeeded / Failed / Unknown — transitions driven by scheduler, kubelet, and container runtime"
+    production_relevance: critical
+  - name: "Resource Requests vs Limits"
+    summary: "Requests are scheduling guarantees; limits are runtime enforcement. CPU is throttled, memory triggers OOMKill."
+    production_relevance: critical
+  - name: "Init Containers"
+    summary: "Run sequentially before app containers; must exit 0 before the main container starts"
+    production_relevance: high
+  - name: "QoS Classes"
+    summary: "Guaranteed (requests=limits), Burstable (requests<limits), BestEffort (no requests/limits) — determines eviction priority"
+    production_relevance: high
+  - name: "Liveness vs Readiness Probes"
+    summary: "Liveness triggers restart; Readiness controls Endpoints membership and traffic routing"
+    production_relevance: critical
+  - name: "Pod Disruption Budget"
+    summary: "Limits voluntary disruptions to ensure availability during maintenance or rolling updates"
+    production_relevance: high
+
+common_misconceptions:
+  - "Pods are like VMs — they are ephemeral process groups sharing a network namespace, not persistent machines"
+  - "Setting a high CPU limit improves performance — CPU limits cause throttling, not faster execution"
+  - "A Pod in Running state means all containers are healthy — a container can be running but failing probes"
+  - "Restarting a Pod preserves its state — Pod restarts create a fresh container; ephemeral storage is lost"
+  - "Memory limits work like CPU limits — exceeding memory limit causes OOMKill (hard kill), not throttling"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "A Pod is the smallest deployable unit; it wraps one or more containers"
+      - "Containers in a Pod share the same network namespace and can communicate via localhost"
+      - "A Pod has a lifecycle: Pending, Running, Succeeded, Failed"
+      - "kubectl describe pod and kubectl logs are the first debugging tools"
+    key_concepts_to_mention:
+      - "Pod"
+      - "container"
+      - "kubectl describe pod"
+      - "Pending / Running / Failed"
+
+  intermediate:
+    expected_understanding:
+      - "Resource requests affect Pod scheduling; limits enforce runtime constraints"
+      - "CPU limit causes throttling; memory limit causes OOMKill"
+      - "Liveness probe restarts the container; readiness probe removes Pod from Service Endpoints"
+      - "Init containers run before the main container and must succeed"
+      - "CrashLoopBackOff means the container is crashing repeatedly with exponential backoff"
+    key_concepts_to_mention:
+      - "resource requests vs limits"
+      - "OOMKilled"
+      - "CrashLoopBackOff"
+      - "liveness / readiness probes"
+      - "init containers"
+
+  senior:
+    expected_understanding:
+      - "QoS classes (Guaranteed, Burstable, BestEffort) determine eviction priority under node memory pressure"
+      - "Pod Disruption Budgets protect availability during voluntary disruptions"
+      - "TopologySpreadConstraints distribute Pods across zones for reliability"
+      - "Vertical Pod Autoscaler vs Horizontal Pod Autoscaler trade-offs"
+      - "CPU manager policies (none vs static) for latency-sensitive workloads"
+    key_concepts_to_mention:
+      - "QoS classes"
+      - "PodDisruptionBudget"
+      - "TopologySpreadConstraints"
+      - "node memory pressure eviction"
+
+  staff:
+    expected_understanding:
+      - "Resource governance strategy across teams — LimitRange, ResourceQuota, namespace design"
+      - "Cost implications of over-provisioning at cluster scale — requests vs actual utilization"
+      - "Pod standards enforcement via admission controllers or OPA/Kyverno"
+      - "Trade-offs between sidecar pattern and separate services at scale"
+    key_concepts_to_mention:
+      - "LimitRange"
+      - "ResourceQuota"
+      - "admission controllers"
+      - "platform-level Pod standards"
+
+  principal:
+    expected_understanding:
+      - "Multi-tenancy models and their impact on Pod isolation and resource governance"
+      - "In-place Pod vertical resize (KEP-1287) and its operational implications"
+      - "Cluster bin-packing strategies and their effect on reliability vs cost"
+      - "Future of Pod scheduling: Descheduler, KEPs in flight"
+    key_concepts_to_mention:
+      - "in-place Pod resize"
+      - "multi-tenancy isolation"
+      - "Descheduler"
+      - "bin-packing"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "A Pod has been in CrashLoopBackOff for 10 minutes. Walk me through your exact debugging steps."
+  - angle: "Production scenario"
+    prompt: "Your Pod is OOMKilled every 4 hours but CPU looks normal and there are no errors in app logs. What do you investigate?"
+  - angle: "Trade-offs"
+    prompt: "When would you run multiple containers in a single Pod versus running them as separate Pods?"
+  - angle: "Design"
+    prompt: "50 teams share a single cluster. How do you enforce resource governance so no team can starve the others?"
+  - angle: "Conceptual"
+    prompt: "Explain the difference between a liveness probe and a readiness probe. What happens if you misconfigure each one?"
+
+debugging_commands:
+  - command: "kubectl describe pod <name> -n <namespace>"
+    purpose: "Shows events, conditions, container statuses, resource usage, and probe results"
+  - command: "kubectl logs <pod> -c <container> --previous"
+    purpose: "Gets logs from the previously crashed container instance"
+  - command: "kubectl get pod <name> -o yaml"
+    purpose: "Full pod spec including status, phase, container states, and conditions"
+  - command: "kubectl top pod <name> --containers"
+    purpose: "Current CPU and memory usage per container"
+  - command: "kubectl exec -it <pod> -c <container> -- sh"
+    purpose: "Shell into a running container for live investigation"
+  - command: "kubectl get events --field-selector involvedObject.name=<pod> --sort-by='.lastTimestamp'"
+    purpose: "All events related to a specific Pod in chronological order"
+
+scenario_seeds:
+  - title: "The Silent OOM"
+    setup: "A Java service Pod restarts every 4-6 hours. No errors in application logs. CPU utilization is normal at ~30%. Memory graphs show a steady rise then a sudden drop at each restart."
+    hint: "JVM heap is not accounted for in the container memory limit. The JVM expands heap beyond the limit, triggering OOMKill by the kernel."
+    difficulty: intermediate
+
+  - title: "Stuck in Pending"
+    setup: "A new Deployment is created. All Pods remain in Pending state indefinitely. Other workloads on the cluster are running fine. No recent cluster changes."
+    hint: "The Pod spec has a nodeSelector for a node label that does not exist on any current node."
+    difficulty: beginner
+
+  - title: "Healthy Pod, No Traffic"
+    setup: "A Pod shows Running and all containers are healthy. The liveness probe is passing. But the Service is returning 503 for all requests routed to this Pod."
+    hint: "The readiness probe is failing silently — wrong port configured. Pod is alive but never enters Endpoints."
+    difficulty: intermediate
+
+  - title: "Init Container Loop"
+    setup: "A Pod's main container never starts. The init container keeps restarting. kubectl logs shows the init container is trying to reach a database but timing out."
+    hint: "The init container checks for a database that hasn't been deployed yet. Deployment ordering issue."
+    difficulty: intermediate
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Correctly explains that requests affect scheduling while limits affect runtime"
+      - "Knows CPU is throttled and memory causes OOMKill — not symmetric"
+      - "Can explain how QoS classes affect eviction order"
+      - "Distinguishes liveness (restart) from readiness (Endpoints removal)"
+    red_flags:
+      - "Confuses Pod restart (same Pod, new container) with Pod recreation (new Pod)"
+      - "Claims higher CPU limits improve performance"
+      - "Does not know what CrashLoopBackOff means"
+      - "Cannot explain the difference between liveness and readiness probes"
+
+  reasoning:
+    strong_signals:
+      - "Follows systematic debugging: events → logs → describe → exec"
+      - "Considers multiple hypotheses before concluding"
+      - "Asks clarifying questions about the environment before diving in"
+    red_flags:
+      - "Jumps to 'restart the Pod' without any investigation"
+      - "Only considers one possible root cause"
+
+  production_thinking:
+    strong_signals:
+      - "Mentions PodDisruptionBudget when discussing rolling updates"
+      - "Considers blast radius — how many users are affected?"
+      - "References resource quotas and governance when discussing multi-team clusters"
+      - "Asks about monitoring and alerting alongside debugging"
+    red_flags:
+      - "No mention of customer impact or blast radius"
+      - "Treats development and production environments identically"
+
+  communication:
+    strong_signals:
+      - "Structures debugging as: observe → hypothesize → verify → fix"
+      - "Uses concrete kubectl commands rather than vague 'check the logs'"
+    red_flags:
+      - "Vague answers like 'I would check the Pod status'"
+      - "Cannot explain the reasoning behind a command they suggested"
+
+follow_up_questions:
+  - trigger: "User mentions resource limits"
+    question: "How do QoS classes affect which Pods get evicted when the node runs low on memory?"
+  - trigger: "User mentions CrashLoopBackOff"
+    question: "What is the backoff behaviour — how long does Kubernetes wait between restarts, and does it ever give up?"
+  - trigger: "User mentions readiness probe"
+    question: "What is the exact effect on traffic when a Pod's readiness probe starts failing? Walk me through what happens at the Service and kube-proxy level."
+  - trigger: "User answers well at intermediate"
+    question: "Design a resource governance policy for 50 engineering teams sharing a single Kubernetes cluster. What mechanisms do you use and why?"
+  - trigger: "User mentions init containers"
+    question: "With Kubernetes 1.29 native sidecar support, how does init container lifecycle management change?"
+
+references:
+  - title: "Kubernetes Docs: Pods"
+    url: "https://kubernetes.io/docs/concepts/workloads/pods/"
+  - title: "Resource Management for Pods and Containers"
+    url: "https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/"
+  - title: "Pod Lifecycle"
+    url: "https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/"
+  - title: "Configure Liveness, Readiness and Startup Probes"
+    url: "https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/"

@@ -1,0 +1,180 @@
+topic: services
+display_name: "Kubernetes Services"
+domain: kubernetes
+category: "Containers & Orchestration"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - kubernetes/pods
+
+learning_objectives:
+  - "Explain why Services exist and what problem they solve with ephemeral Pod IPs"
+  - "Describe the four Service types and when to use each"
+  - "Explain how kube-proxy implements Service routing via iptables or IPVS"
+  - "Debug a Service with no Endpoints or traffic not reaching Pods"
+  - "Explain the role of selectors, labels, and Endpoints objects"
+
+key_concepts:
+  - name: "ClusterIP"
+    summary: "Stable virtual IP reachable only within the cluster; the default and most common type"
+    production_relevance: critical
+  - name: "NodePort"
+    summary: "Exposes Service on each node's IP at a static port; useful for external access without a cloud LB"
+    production_relevance: medium
+  - name: "LoadBalancer"
+    summary: "Provisions a cloud load balancer (AWS ELB, GCP LB) pointing to the Service; production external access"
+    production_relevance: critical
+  - name: "ExternalName"
+    summary: "Maps a Service to an external DNS name via CNAME; used for service abstraction over external deps"
+    production_relevance: medium
+  - name: "Endpoints / EndpointSlices"
+    summary: "The actual list of Pod IPs backing a Service; kube-proxy reads these to program iptables rules"
+    production_relevance: critical
+  - name: "kube-proxy"
+    summary: "Runs on each node, programs iptables/IPVS rules to route ClusterIP traffic to Pod IPs"
+    production_relevance: high
+  - name: "Headless Service"
+    summary: "ClusterIP: None — returns Pod IPs directly from DNS; used for StatefulSets and direct Pod addressing"
+    production_relevance: high
+
+common_misconceptions:
+  - "A Service with a matching selector always has Endpoints — readiness probe failure removes Pods from Endpoints even if the selector matches"
+  - "ClusterIP is routed by the API server — it is programmed by kube-proxy on each node"
+  - "NodePort is production-ready for external traffic — it is generally not; use LoadBalancer or Ingress"
+  - "Changing a Service selector takes effect immediately everywhere — kube-proxy sync has latency"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "Services provide a stable IP and DNS name for a group of Pods"
+      - "Pods have ephemeral IPs that change on restart; Services solve this"
+      - "Service selector must match Pod labels exactly for Endpoints to populate"
+      - "The four Service types: ClusterIP, NodePort, LoadBalancer, ExternalName"
+    key_concepts_to_mention:
+      - "stable IP"
+      - "selector / labels"
+      - "ClusterIP"
+      - "Endpoints"
+
+  intermediate:
+    expected_understanding:
+      - "Endpoints object lists Pod IPs; kube-proxy programs iptables rules from it"
+      - "Readiness probe failure removes a Pod from Endpoints even if it is Running"
+      - "DNS for Services: {service}.{namespace}.svc.cluster.local"
+      - "EndpointSlices replace Endpoints for scalability at large pod counts"
+      - "Session affinity (ClientIP) and its trade-offs"
+    key_concepts_to_mention:
+      - "EndpointSlices"
+      - "kube-proxy / iptables"
+      - "readiness → Endpoints membership"
+      - "DNS resolution pattern"
+
+  senior:
+    expected_understanding:
+      - "iptables vs IPVS mode for kube-proxy — trade-offs at scale (10k+ Endpoints)"
+      - "Service topology and traffic routing hints for latency-aware routing"
+      - "External traffic policy (Cluster vs Local) and its effect on source IP preservation and performance"
+      - "Why LoadBalancer Services can be expensive and Ingress is preferred for HTTP"
+    key_concepts_to_mention:
+      - "IPVS mode"
+      - "externalTrafficPolicy: Local vs Cluster"
+      - "source IP preservation"
+      - "Ingress vs LoadBalancer trade-offs"
+
+  staff:
+    expected_understanding:
+      - "Service mesh (Istio, Cilium) as an alternative to kube-proxy for advanced traffic management"
+      - "Multi-cluster Service discovery patterns"
+      - "Cost implications of LoadBalancer Services at org scale"
+      - "Gateway API as the successor to Ingress"
+    key_concepts_to_mention:
+      - "Gateway API"
+      - "service mesh"
+      - "multi-cluster service discovery"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "A Service exists, its selector matches Pod labels, Pods are Running — but curling the ClusterIP returns connection refused. Walk me through debugging this."
+  - angle: "Conceptual"
+    prompt: "What exactly happens between the moment you create a Service and the moment traffic can reach the backing Pods?"
+  - angle: "Trade-offs"
+    prompt: "When would you expose a service via LoadBalancer vs NodePort vs Ingress? What are the cost and operational trade-offs?"
+  - angle: "Production scenario"
+    prompt: "After a deployment, 20% of requests to a Service are failing. The new Pods are Running. What do you investigate?"
+
+debugging_commands:
+  - command: "kubectl get endpoints <service-name>"
+    purpose: "Shows which Pod IPs are backing the Service — empty means selector mismatch or readiness failure"
+  - command: "kubectl describe service <name>"
+    purpose: "Shows selector, endpoints, port mapping, and events"
+  - command: "kubectl get pods -l <selector-label>=<value>"
+    purpose: "Verify which Pods match the Service selector"
+  - command: "kubectl run tmp --image=busybox -it --rm -- wget -qO- http://<service>.<namespace>.svc.cluster.local"
+    purpose: "Test Service DNS resolution and connectivity from inside the cluster"
+  - command: "iptables -t nat -L KUBE-SERVICES | grep <clusterip>"
+    purpose: "Verify kube-proxy has programmed the iptables rule for this Service"
+
+scenario_seeds:
+  - title: "The Empty Endpoints"
+    setup: "Service exists. kubectl get svc shows a ClusterIP. But all curl attempts from inside the cluster fail with 'connection refused'. kubectl get endpoints shows no addresses."
+    hint: "Pod labels do not exactly match the Service selector — a typo in a label key."
+    difficulty: beginner
+
+  - title: "Intermittent 503s After Deploy"
+    setup: "A new version deployed. 30% of requests fail with 503 for about 90 seconds then recover. No application errors in logs. The old Pods are terminating."
+    hint: "New Pods are added to Endpoints before readiness probes pass, causing traffic to hit Pods that aren't ready yet. minReadySeconds not set."
+    difficulty: intermediate
+
+  - title: "Source IP Lost"
+    setup: "A LoadBalancer Service is receiving traffic. The application logs show all requests coming from the same node IP, not the real client IP. Security team needs the real source IP for audit logs."
+    hint: "externalTrafficPolicy is set to Cluster (default). Setting it to Local preserves source IP but requires Pods on every node."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows Endpoints are populated based on readiness, not just selector match"
+      - "Can explain what kube-proxy does with the Endpoints list"
+      - "Understands DNS format for in-cluster service resolution"
+      - "Knows difference between ClusterIP, NodePort, LoadBalancer use cases"
+    red_flags:
+      - "Thinks selector match alone guarantees Endpoints"
+      - "Cannot explain what kube-proxy does"
+      - "Confuses Service types and their use cases"
+
+  reasoning:
+    strong_signals:
+      - "Checks Endpoints first when debugging Service connectivity"
+      - "Separates DNS resolution from routing when debugging"
+    red_flags:
+      - "Goes straight to checking application logs without verifying network path"
+
+  production_thinking:
+    strong_signals:
+      - "Mentions readiness probes as part of safe deployment"
+      - "Considers cost when choosing Service type"
+      - "Thinks about failover behaviour when all Endpoints become unhealthy"
+    red_flags:
+      - "Recommends NodePort for production external traffic"
+
+  communication:
+    strong_signals:
+      - "Can draw or describe the request path: client → ClusterIP → iptables → Pod IP"
+    red_flags:
+      - "Vague about how traffic actually gets from Service to Pod"
+
+follow_up_questions:
+  - trigger: "User mentions selector"
+    question: "A Pod has all the right labels. The selector matches. But it's still not in Endpoints. What else could cause this?"
+  - trigger: "User mentions kube-proxy"
+    question: "What is the difference between iptables mode and IPVS mode in kube-proxy? When would you switch to IPVS?"
+  - trigger: "User mentions LoadBalancer"
+    question: "You have 50 microservices, each exposed as a LoadBalancer Service. What's the problem with this approach at scale?"
+
+references:
+  - title: "Kubernetes Docs: Services"
+    url: "https://kubernetes.io/docs/concepts/services-networking/service/"
+  - title: "EndpointSlices"
+    url: "https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/"

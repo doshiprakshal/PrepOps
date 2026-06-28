@@ -1,0 +1,179 @@
+topic: processes
+display_name: "Linux Processes"
+domain: linux
+category: "OS & Networking"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites: []
+
+learning_objectives:
+  - "Explain Linux process states and what causes each transition"
+  - "Use signals correctly to control processes and understand their effects"
+  - "Explain how systemd manages services and interpret service failures"
+  - "Read /proc for live process inspection without additional tools"
+  - "Debug a zombie process, orphan process, or stuck process in D state"
+
+key_concepts:
+  - name: "Process States"
+    summary: "R (Running), S (Sleeping/Interruptible), D (Uninterruptible Sleep/IO), Z (Zombie), T (Stopped)"
+    production_relevance: critical
+  - name: "Signals"
+    summary: "SIGTERM (graceful shutdown), SIGKILL (force kill, cannot be caught), SIGHUP (reload config), SIGINT (Ctrl+C)"
+    production_relevance: critical
+  - name: "systemd and Units"
+    summary: "PID 1 in modern Linux; manages services via unit files; journald for logs"
+    production_relevance: critical
+  - name: "/proc Filesystem"
+    summary: "Virtual filesystem exposing kernel and process state; /proc/<pid>/status, /proc/<pid>/fd, /proc/<pid>/maps"
+    production_relevance: high
+  - name: "Zombie Processes"
+    summary: "A process that has exited but whose parent hasn't called wait(); consumes a PID but no memory"
+    production_relevance: high
+  - name: "Process Priority and Nice"
+    summary: "nice values (-20 to +19) and real-time priorities affect CPU scheduling; renice to adjust running processes"
+    production_relevance: medium
+
+common_misconceptions:
+  - "SIGKILL always immediately kills a process — a process in D (uninterruptible sleep) cannot be killed by any signal"
+  - "Zombie processes consume memory — they consume only a PID entry in the process table, not memory"
+  - "kill -9 is always the right way to stop a process — SIGTERM should be tried first to allow graceful shutdown"
+  - "A process with PPID 1 is a zombie — it is an orphan adopted by init/systemd, not a zombie"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "ps aux shows all running processes with CPU and memory usage"
+      - "kill sends a signal to a process by PID; kill -9 sends SIGKILL"
+      - "SIGTERM is graceful shutdown; SIGKILL is force kill"
+      - "systemctl status/start/stop/restart to manage services"
+    key_concepts_to_mention:
+      - "ps aux"
+      - "kill / SIGTERM / SIGKILL"
+      - "systemctl"
+      - "PID"
+
+  intermediate:
+    expected_understanding:
+      - "Process states: R, S, D, Z, T and what each means for debugging"
+      - "D state (uninterruptible sleep) means waiting for I/O; cannot be killed"
+      - "Zombie: exited but parent hasn't called wait() — kills parent to resolve"
+      - "journalctl to read systemd service logs; ExecStart, Restart, After in unit files"
+      - "/proc/<pid>/fd to check open file handles; useful for disk full after deletion"
+    key_concepts_to_mention:
+      - "D state / IO wait"
+      - "zombie process / wait()"
+      - "journalctl"
+      - "/proc/<pid>/fd"
+
+  senior:
+    expected_understanding:
+      - "Process groups and sessions; how kill -<pgid> kills a process tree"
+      - "cgroups for resource control of process groups (memory limits, CPU shares)"
+      - "strace to trace system calls; ltrace for library calls"
+      - "How containers use PID namespaces and why PID 1 in a container is special"
+      - "OOM killer: /proc/sys/vm/overcommit_memory and oom_score_adj"
+    key_concepts_to_mention:
+      - "cgroups"
+      - "PID namespace"
+      - "strace"
+      - "OOM killer / oom_score_adj"
+
+  staff:
+    expected_understanding:
+      - "systemd unit design for resilient services: RestartPolicy, resource limits, security hardening"
+      - "Process isolation strategies: namespaces, seccomp, AppArmor, capabilities"
+      - "Impact of high zombie count on PID exhaustion at scale"
+    key_concepts_to_mention:
+      - "seccomp / AppArmor"
+      - "Linux capabilities"
+      - "PID namespace isolation"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "A process won't die even after kill -9. What's happening and what do you do?"
+  - angle: "Debugging"
+    prompt: "Load average is 40 on a 4-core machine. CPU shows only 10% utilization. What's wrong?"
+  - angle: "Production scenario"
+    prompt: "Disk is full despite deleting large files. df shows no free space but du doesn't account for it. What's happening?"
+  - angle: "Conceptual"
+    prompt: "Explain the difference between a zombie process and an orphan process."
+
+debugging_commands:
+  - command: "ps auxf"
+    purpose: "Show all processes in tree format showing parent-child relationships"
+  - command: "ps aux | grep 'D '"
+    purpose: "Find processes in uninterruptible sleep (I/O wait) state"
+  - command: "cat /proc/<pid>/status"
+    purpose: "Detailed process status including state, memory, signals"
+  - command: "ls -la /proc/<pid>/fd"
+    purpose: "List all open file descriptors — find deleted-but-held-open files"
+  - command: "strace -p <pid>"
+    purpose: "Trace system calls of a running process to understand what it's doing"
+  - command: "journalctl -u <service> -f"
+    purpose: "Follow logs for a specific systemd service in real time"
+  - command: "systemctl status <service>"
+    purpose: "Service status, last log lines, exit code, cgroup membership"
+
+scenario_seeds:
+  - title: "Disk Full, Nothing to Delete"
+    setup: "df -h shows root filesystem at 100%. du -sh /* shows only 20GB used but filesystem is 50GB. Application logs show 'No space left on device'."
+    hint: "A large log file was deleted but a running process still has it open. The space isn't freed until the process closes the file descriptor."
+    difficulty: intermediate
+
+  - title: "Unkillable Process"
+    setup: "A process is consuming excessive CPU. kill -9 <pid> returns success but the process remains in ps output. kill -0 <pid> shows the process still exists."
+    hint: "Process is in D (uninterruptible sleep) state waiting on a hung NFS mount or block device. Cannot be killed by any signal."
+    difficulty: intermediate
+
+  - title: "Zombie Army"
+    setup: "ps aux shows hundreds of Z (zombie) processes. The system is running slowly and new processes can't be created."
+    hint: "The parent process has a bug and isn't calling wait(). PID table is nearly exhausted. Kill the parent to have init adopt and reap the zombies."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows D state cannot be killed by any signal"
+      - "Correctly distinguishes zombie (exited, parent not called wait) from orphan (parent died, adopted by init)"
+      - "Knows lsof or /proc/<pid>/fd for finding open file handles after deletion"
+      - "Understands SIGTERM vs SIGKILL semantics"
+    red_flags:
+      - "Claims kill -9 can always kill any process"
+      - "Confuses zombie with orphan"
+      - "Doesn't know what D state means"
+
+  reasoning:
+    strong_signals:
+      - "Checks process state before attempting to kill"
+      - "Thinks about parent process when dealing with zombies"
+    red_flags:
+      - "First response to any process problem is kill -9"
+
+  production_thinking:
+    strong_signals:
+      - "Considers impact before killing a production process"
+      - "Mentions checking what the process has open before killing it"
+    red_flags:
+      - "Would immediately kill production processes without understanding impact"
+
+  communication:
+    strong_signals:
+      - "Can explain process state transitions clearly"
+    red_flags:
+      - "Vague about what actually happens during a kill signal"
+
+follow_up_questions:
+  - trigger: "User mentions kill -9"
+    question: "What happens to a process's open file descriptors and child processes when you kill -9 it?"
+  - trigger: "User mentions zombie"
+    question: "How would you resolve a zombie process without killing the parent?"
+  - trigger: "User mentions D state"
+    question: "Under what specific conditions does a process enter D state? What does this tell you about the system?"
+
+references:
+  - title: "Linux Process States"
+    url: "https://man7.org/linux/man-pages/man5/proc.5.html"
+  - title: "systemd Documentation"
+    url: "https://www.freedesktop.org/wiki/Software/systemd/"

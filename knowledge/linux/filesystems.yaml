@@ -1,0 +1,154 @@
+topic: filesystems
+display_name: "Linux Filesystems"
+domain: linux
+category: "OS & Networking"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - linux/processes
+
+learning_objectives:
+  - "Explain inodes and why inode exhaustion causes 'no space left' despite free disk space"
+  - "Mount and manage filesystems including NFS and bind mounts"
+  - "Use LVM to manage volumes, resize filesystems, and create snapshots"
+  - "Debug common filesystem issues: full disk, permission errors, stale NFS mounts"
+  - "Tune filesystem parameters for performance in I/O-intensive workloads"
+
+key_concepts:
+  - name: "Inodes"
+    summary: "Metadata structures storing file attributes and data block pointers; each file consumes one inode"
+    production_relevance: critical
+  - name: "LVM (Logical Volume Manager)"
+    summary: "Abstraction layer over block devices enabling dynamic resize, snapshots, and volume groups"
+    production_relevance: high
+  - name: "NFS (Network File System)"
+    summary: "Network-mounted filesystem; stale mounts cause hung processes in D state"
+    production_relevance: high
+  - name: "ext4 vs XFS"
+    summary: "ext4: mature, good for small files; XFS: better for large files and high concurrency, default on RHEL"
+    production_relevance: medium
+  - name: "Mount Namespace"
+    summary: "Linux kernel feature that isolates filesystem mount points; foundation for container filesystems"
+    production_relevance: high
+
+common_misconceptions:
+  - "df showing free space means you can create files — inode exhaustion causes ENOSPC even with free blocks"
+  - "rm always frees disk space immediately — space isn't freed until all file descriptors are closed"
+  - "NFS mount failures immediately cause errors — stale NFS mounts cause processes to hang in D state indefinitely"
+  - "fsck can be run on a mounted filesystem — fsck must be run on an unmounted filesystem"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "df -h shows disk space by filesystem; du -sh shows directory/file sizes"
+      - "mount shows mounted filesystems; /etc/fstab controls automatic mounts"
+      - "chmod, chown for file permissions; ls -la to view them"
+      - "ln -s for symbolic links; ln for hard links"
+    key_concepts_to_mention:
+      - "df / du"
+      - "mount / fstab"
+      - "permissions / chmod"
+      - "symbolic vs hard links"
+
+  intermediate:
+    expected_understanding:
+      - "Inodes: df -i shows inode usage; ls -i shows a file's inode number"
+      - "Why deleting a file doesn't free space if another process holds it open (lsof)"
+      - "LVM basics: PV, VG, LV; lvextend to grow a volume"
+      - "NFS mount options: soft vs hard, timeo, retrans"
+      - "Bind mounts: mount --bind for container-style volume mounts"
+    key_concepts_to_mention:
+      - "df -i (inode usage)"
+      - "lsof for open files"
+      - "LVM (PV/VG/LV)"
+      - "NFS soft vs hard mount"
+
+  senior:
+    expected_understanding:
+      - "ext4 journal modes: writeback (performance) vs ordered (default) vs journal (safest)"
+      - "XFS advantages: parallel I/O, delayed allocation, better for large files and high-throughput workloads"
+      - "LVM snapshots: copy-on-write mechanism and performance impact on the origin volume"
+      - "Filesystem tuning: noatime, barrier=0, stripe/stride for RAID"
+      - "OverlayFS — how container layer filesystems work in Docker/containerd"
+    key_concepts_to_mention:
+      - "journal modes"
+      - "LVM snapshot COW"
+      - "noatime mount option"
+      - "OverlayFS / container layers"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "df -h shows 20% disk space used but creating a new file gives 'No space left on device'. What's happening?"
+  - angle: "Debugging"
+    prompt: "A process is hanging in D state. strace shows it's stuck on a read() call. No kernel panics. What do you investigate?"
+  - angle: "Production scenario"
+    prompt: "Root filesystem is at 95%. You need to free space without downtime. Walk me through your approach."
+
+debugging_commands:
+  - command: "df -h && df -i"
+    purpose: "Check both disk space and inode usage — both can cause ENOSPC"
+  - command: "du -sh /* 2>/dev/null | sort -rh | head -20"
+    purpose: "Find the largest directories consuming disk space"
+  - command: "lsof | grep deleted"
+    purpose: "Find files that have been deleted but are still held open by a process"
+  - command: "lvextend -L +10G /dev/vg0/lv_root && resize2fs /dev/vg0/lv_root"
+    purpose: "Extend an LVM volume and resize the filesystem on it"
+  - command: "findmnt --verify"
+    purpose: "Verify all mounts in /etc/fstab are correctly mounted"
+
+scenario_seeds:
+  - title: "Inode Exhaustion"
+    setup: "Log rotation process fails with 'No space left on device'. df -h shows 40% disk used. Application is creating millions of tiny temp files in /tmp."
+    hint: "df -i shows 100% inode usage. The filesystem ran out of inodes, not disk blocks. Need to clean up tiny files or reformat with more inodes."
+    difficulty: intermediate
+
+  - title: "Stale NFS Mount"
+    setup: "Several processes are stuck and unresponsive. ps shows them in D state. kill -9 has no effect. The processes were accessing /mnt/shared before getting stuck."
+    hint: "NFS server became unreachable. /mnt/shared is mounted with 'hard' option causing indefinite retry. Need to force unmount with umount -f -l or fix NFS server."
+    difficulty: intermediate
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows df -i for inode usage and its difference from disk space"
+      - "Can explain why deleted files don't immediately free space"
+      - "Understands NFS hard mount behavior causes D state hangs"
+      - "Knows LVM provides online resize capability"
+    red_flags:
+      - "Doesn't know what an inode is"
+      - "Thinks running fsck on a mounted filesystem is safe"
+      - "Cannot explain why rm doesn't always free space"
+
+  reasoning:
+    strong_signals:
+      - "Checks both df -h and df -i when investigating disk issues"
+      - "Uses lsof to investigate space discrepancies"
+    red_flags:
+      - "Only checks disk space, ignores inodes"
+
+  production_thinking:
+    strong_signals:
+      - "Considers impact of NFS mount options on production resilience"
+      - "Mentions LVM for online filesystem management without downtime"
+    red_flags:
+      - "Would unmount a production filesystem without considering running processes"
+
+  communication:
+    strong_signals:
+      - "Can explain the relationship between blocks, inodes, and files clearly"
+    red_flags:
+      - "Cannot distinguish 'disk full' from 'inode full'"
+
+follow_up_questions:
+  - trigger: "User mentions inode"
+    question: "How do you find which directory is consuming the most inodes without running out of time in production?"
+  - trigger: "User mentions LVM"
+    question: "What is an LVM snapshot and how does copy-on-write work? What happens to performance of the origin volume?"
+
+references:
+  - title: "Linux Filesystem Hierarchy Standard"
+    url: "https://refspecs.linuxfoundation.org/FHS_3.0/fhs-3.0.html"
+  - title: "LVM Administration Guide"
+    url: "https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/configuring_and_managing_logical_volumes/"

@@ -1,0 +1,155 @@
+topic: drift
+display_name: "Terraform Drift Detection & Reconciliation"
+domain: terraform
+category: "Infrastructure as Code"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - terraform/state
+
+learning_objectives:
+  - "Explain what infrastructure drift is and why it occurs"
+  - "Detect drift using terraform plan and terraform refresh"
+  - "Decide when to reconcile drift vs accept it"
+  - "Import manually created resources into Terraform state"
+  - "Prevent drift with policy enforcement and access controls"
+
+key_concepts:
+  - name: "Drift"
+    summary: "Difference between real infrastructure state and Terraform state; caused by manual changes, external processes, or failed applies"
+    production_relevance: critical
+  - name: "terraform plan"
+    summary: "Compares desired state (code) with current state (state file + real infra refresh) to produce a diff"
+    production_relevance: critical
+  - name: "terraform refresh"
+    summary: "Updates state file to match real infrastructure without changing resources; deprecated in favor of plan -refresh-only"
+    production_relevance: high
+  - name: "terraform import"
+    summary: "Brings a real resource under Terraform management by adding it to state; code must be written separately"
+    production_relevance: high
+  - name: "Drift Prevention"
+    summary: "Restrict manual cloud console access; enforce IaC-only changes via SCPs/org policies and CI/CD controls"
+    production_relevance: critical
+
+common_misconceptions:
+  - "terraform refresh fixes drift — it only updates state to match reality; it does not apply any changes"
+  - "A passing plan means infrastructure is correct — plan only checks tracked resources; untracked resources are invisible"
+  - "Drift is always caused by manual changes — automation tools, cloud auto-scaling, and failed partial applies also cause drift"
+  - "terraform import also generates the Terraform code — import only adds to state; you must write the code yourself"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "Drift is when real infrastructure differs from what Terraform expects"
+      - "terraform plan detects drift and shows what would be changed"
+      - "Manual console changes cause drift and can be overwritten by the next apply"
+    key_concepts_to_mention:
+      - "drift"
+      - "terraform plan"
+      - "manual change risk"
+
+  intermediate:
+    expected_understanding:
+      - "terraform plan -refresh-only to see drift without applying changes"
+      - "terraform import to bring existing resources under management"
+      - "Deciding when to reconcile (apply to match code) vs accept (update code to match reality)"
+      - "Partial applies can create partial drift — always check plan output after failed applies"
+    key_concepts_to_mention:
+      - "plan -refresh-only"
+      - "terraform import"
+      - "reconcile vs accept decision"
+
+  senior:
+    expected_understanding:
+      - "Continuous drift detection: scheduled terraform plan in CI/CD, alert on non-empty plans"
+      - "Blast radius of reconciling drift in production vs leaving it"
+      - "Drift in autoscaling groups, security group rules, and IAM policies — common sources"
+      - "terraform state rm + re-import for complex drift scenarios"
+    key_concepts_to_mention:
+      - "scheduled drift detection"
+      - "non-empty plan alerting"
+      - "drift risk assessment"
+
+  staff:
+    expected_understanding:
+      - "Policy enforcement to prevent drift: AWS SCPs, OPA, Sentinel to block console mutations"
+      - "Drift as a compliance risk — auditing drift history"
+      - "Brownfield migration strategy: importing large existing infrastructure"
+    key_concepts_to_mention:
+      - "SCP / OPA drift prevention"
+      - "brownfield import strategy"
+      - "drift audit trail"
+
+interview_angles:
+  - angle: "Production scenario"
+    prompt: "You run terraform plan on Monday morning and see 15 resources marked for deletion that you did not intend to delete. What do you do?"
+  - angle: "Debugging"
+    prompt: "terraform plan shows a security group rule will be added. You know that rule already exists in AWS. What is happening?"
+  - angle: "Design"
+    prompt: "How do you prevent engineers from making manual changes in the AWS console that would cause drift?"
+
+debugging_commands:
+  - command: "terraform plan -refresh-only"
+    purpose: "Show drift between state file and real infrastructure without showing code changes"
+  - command: "terraform plan -out=tfplan && terraform show tfplan"
+    purpose: "Generate a saved plan to review before applying"
+  - command: "terraform state show <resource>"
+    purpose: "Show the current state for a specific resource to compare with real infrastructure"
+  - command: "terraform import <resource_type.name> <aws_resource_id>"
+    purpose: "Import an existing AWS resource into Terraform state"
+
+scenario_seeds:
+  - title: "The Accidental Deletion"
+    setup: "Monday morning terraform plan shows 3 production RDS instances will be destroyed. No Terraform code changes were made over the weekend. Engineers made no manual changes."
+    hint: "Another team's Terraform apply ran over the weekend and removed the RDS instances from a shared state file. Or a partial apply last week left state inconsistent."
+    difficulty: senior
+
+  - title: "The Shadow Resource"
+    setup: "A network engineer created a VPC security group manually in the console to unblock a production incident. terraform plan now shows it will be deleted. Deleting it would break production."
+    hint: "Use terraform import to bring the security group under Terraform management, then add the corresponding resource block to code. Only then is it safe to apply."
+    difficulty: intermediate
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows terraform refresh (or plan -refresh-only) vs terraform apply distinction"
+      - "Can explain terraform import and its limitation (no code generation)"
+      - "Understands that plan shows drift as desired vs actual, not old vs new"
+    red_flags:
+      - "Thinks terraform refresh applies changes to infrastructure"
+      - "Thinks terraform import also generates Terraform code"
+      - "Would blindly apply a plan showing resource deletions without investigating"
+
+  reasoning:
+    strong_signals:
+      - "Investigates why drift occurred before deciding how to reconcile"
+      - "Considers blast radius before applying any plan with deletions"
+    red_flags:
+      - "Immediately runs apply without understanding what caused the drift"
+
+  production_thinking:
+    strong_signals:
+      - "Proposes drift prevention (restricted console access) alongside detection"
+      - "Considers using plan -out for peer review before applying risky plans"
+    red_flags:
+      - "Treats drift purely as a technical problem without addressing the process gap"
+
+  communication:
+    strong_signals:
+      - "Can explain the decision framework: reconcile (fix infra to match code) vs accept (fix code to match infra)"
+    red_flags:
+      - "Cannot explain when you would choose to accept drift vs reconcile it"
+
+follow_up_questions:
+  - trigger: "User mentions terraform import"
+    question: "After importing 50 existing resources into Terraform, what is the risk of running terraform plan immediately?"
+  - trigger: "User mentions preventing drift"
+    question: "An SRE needs to make an emergency change directly in AWS at 3am. How do you handle this in your IaC process?"
+
+references:
+  - title: "Terraform Plan Documentation"
+    url: "https://developer.hashicorp.com/terraform/cli/commands/plan"
+  - title: "Terraform Import"
+    url: "https://developer.hashicorp.com/terraform/cli/commands/import"

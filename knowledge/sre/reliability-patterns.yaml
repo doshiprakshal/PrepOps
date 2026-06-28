@@ -1,0 +1,171 @@
+topic: reliability-patterns
+display_name: "Reliability Patterns"
+domain: sre
+category: "Engineering Practices"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - sre/slos-error-budgets
+  - sre/incident-response
+
+learning_objectives:
+  - "Explain circuit breaker, retry with backoff, and bulkhead patterns"
+  - "Design a resilient architecture that degrades gracefully under failure"
+  - "Apply chaos engineering principles to proactively find weaknesses"
+  - "Implement rate limiting and load shedding for self-protection"
+  - "Distinguish between fault tolerance and fault recovery"
+
+key_concepts:
+  - name: "Circuit Breaker"
+    summary: "Stops calls to failing downstream service; gives it recovery time; prevents cascade; has Open/HalfOpen/Closed states"
+    production_relevance: critical
+  - name: "Retry with Exponential Backoff and Jitter"
+    summary: "Retry transient failures with increasing delay + random jitter; prevents thundering herd on recovery"
+    production_relevance: critical
+  - name: "Bulkhead"
+    summary: "Isolate failures by using separate thread pools or connection pools per dependency; one slow service can't starve others"
+    production_relevance: critical
+  - name: "Graceful Degradation"
+    summary: "Return reduced functionality (cached data, feature disabled) instead of complete failure when a dependency is down"
+    production_relevance: critical
+  - name: "Rate Limiting and Load Shedding"
+    summary: "Reject excess requests early to protect service; prefer shedding with 429/503 over saturating and dying"
+    production_relevance: high
+  - name: "Chaos Engineering"
+    summary: "Deliberately inject failures in production/staging to validate system resilience assumptions"
+    production_relevance: high
+
+common_misconceptions:
+  - "Retries always help — unlimited retries under failure amplify load and cause cascades; always cap retries and use backoff"
+  - "Circuit breaker is just a fancy if statement — it has state transitions and half-open probing; it's a stateful component"
+  - "Redundancy eliminates single points of failure — redundant components with a shared dependency still have an SPOF"
+  - "Chaos engineering is just breaking things randomly — it is a scientific method: hypothesis, blast radius control, monitoring"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "Redundancy: run multiple instances so one failure doesn't cause full outage"
+      - "Health checks and automatic instance replacement"
+      - "Timeouts prevent infinite waiting on a failed dependency"
+      - "Retrying failed requests handles transient errors"
+    key_concepts_to_mention:
+      - "redundancy"
+      - "timeout"
+      - "retry"
+      - "health check"
+
+  intermediate:
+    expected_understanding:
+      - "Circuit breaker: Open (fail fast) → HalfOpen (probe) → Closed (normal); prevents cascade"
+      - "Exponential backoff with jitter prevents thundering herd"
+      - "Bulkhead pattern: separate resource pools prevent one bad dependency from affecting others"
+      - "Graceful degradation: serve stale cache, disable non-critical features"
+      - "Timeout budget: each hop must have its own timeout; don't let caller timeout cascade"
+    key_concepts_to_mention:
+      - "circuit breaker states"
+      - "exponential backoff with jitter"
+      - "bulkhead"
+      - "timeout budget / cascading timeouts"
+
+  senior:
+    expected_understanding:
+      - "Retry budget: total retries across all instances; not just per-instance retry count"
+      - "Rate limiting strategies: token bucket vs leaky bucket vs fixed window vs sliding window"
+      - "Fallback hierarchy: primary → secondary → cache → degraded → error"
+      - "Chaos engineering: GameDays, fault injection, Gremlin/Chaos Monkey"
+      - "Testing reliability: Netflix Chaos Monkey, AWS Fault Injection Simulator"
+    key_concepts_to_mention:
+      - "retry budget"
+      - "rate limiting algorithms"
+      - "chaos engineering tools"
+      - "fallback hierarchy"
+
+  staff:
+    expected_understanding:
+      - "Organizational reliability posture: chaos engineering program, reliability reviews"
+      - "Reliability as a feature: how to quantify and communicate it to product"
+      - "Designing for blast radius: cell-based architecture, blast radius containment"
+      - "Multi-region reliability: data replication, consistency trade-offs, split-brain"
+    key_concepts_to_mention:
+      - "cell-based architecture"
+      - "blast radius containment"
+      - "multi-region data consistency"
+      - "reliability reviews"
+
+interview_angles:
+  - angle: "Conceptual"
+    prompt: "Explain how a circuit breaker works. Draw the state machine. What triggers each state transition?"
+  - angle: "Trade-offs"
+    prompt: "You are implementing retries for a payment service. What parameters do you set and why?"
+  - angle: "Design"
+    prompt: "Design a resilient microservice architecture for an e-commerce checkout that gracefully degrades when the inventory service is down."
+  - angle: "Production scenario"
+    prompt: "Your service is calling a slow third-party API. The slow API is causing your thread pool to fill up and your service is now unresponsive. What patterns do you apply?"
+
+scenario_seeds:
+  - title: "The Retry Storm"
+    setup: "A database went down for 90 seconds. When it recovered, 50 services simultaneously retried all failed requests. The database was immediately overwhelmed and went down again. This repeated 3 times."
+    hint: "Thundering herd caused by synchronized retries without jitter. Fix: exponential backoff with jitter so retries spread over time. Also add circuit breakers so services stop trying when DB is clearly down."
+    difficulty: intermediate
+
+  - title: "The Thread Pool Death"
+    setup: "Service A calls Service B and Service C. Service C becomes slow (5s response). Service A's thread pool fills with threads waiting for C. Service A becomes unresponsive. Service B, which also calls A, starts failing too."
+    hint: "No timeout + no bulkhead. Service C's latency consumes all of A's threads via shared thread pool. Fix: set timeout on C calls, use separate thread pool (bulkhead) for C calls so C's slowness can't starve B-handling threads."
+    difficulty: intermediate
+
+  - title: "The Hidden SPOF"
+    setup: "You designed a system with 3 redundant instances in 3 AZs. The system has 99.999% theoretical availability. But during a network event, all 3 instances failed simultaneously. Post-incident analysis shows they all share a common Redis cluster for session data."
+    hint: "Redundant compute but a shared dependency (Redis) created a hidden SPOF. Cell-based architecture or regional Redis replicas would contain the blast radius."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Can draw the circuit breaker state machine correctly"
+      - "Knows exponential backoff AND jitter (not just backoff)"
+      - "Can explain bulkhead and gives a concrete implementation"
+      - "Distinguishes fault tolerance from fault recovery"
+    red_flags:
+      - "Thinks retrying always helps without considering retry amplification"
+      - "Cannot explain the circuit breaker Open/HalfOpen/Closed states"
+      - "Thinks redundancy eliminates all SPOFs without considering shared dependencies"
+
+  reasoning:
+    strong_signals:
+      - "Considers downstream impact of their mitigation choices"
+      - "Thinks about graceful degradation before thinking about full reliability"
+    red_flags:
+      - "Designs for the happy path only without failure modes"
+
+  production_thinking:
+    strong_signals:
+      - "Mentions monitoring and alerting as part of reliability design"
+      - "Proposes testing the failure scenarios (chaos engineering)"
+      - "Considers blast radius when designing fallback strategies"
+    red_flags:
+      - "Designs reliability patterns without a way to test that they work"
+
+  communication:
+    strong_signals:
+      - "Can explain circuit breaker to a non-technical audience using an analogy"
+      - "Articulates trade-offs of each pattern clearly"
+    red_flags:
+      - "Vague about how circuit breaker actually helps versus just failing faster"
+
+follow_up_questions:
+  - trigger: "User mentions circuit breaker"
+    question: "How does the circuit breaker decide when to transition from Open to HalfOpen? What could go wrong during the HalfOpen state?"
+  - trigger: "User mentions retry"
+    question: "What is the difference between per-instance retry count and retry budget? Why does the distinction matter under load?"
+  - trigger: "User mentions chaos engineering"
+    question: "How would you introduce chaos engineering to a team that has never done it? What would you test first and why?"
+
+references:
+  - title: "Release It! Design and Deploy Production-Ready Software"
+    url: "https://pragprog.com/titles/mnee2/release-it-second-edition/"
+  - title: "Chaos Engineering Principles"
+    url: "https://principlesofchaos.org/"
+  - title: "Google SRE Book: Cascading Failures"
+    url: "https://sre.google/sre-book/cascading-failures/"

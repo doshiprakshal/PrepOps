@@ -1,0 +1,178 @@
+topic: iam
+display_name: "AWS IAM"
+domain: aws
+category: "Cloud"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites: []
+
+learning_objectives:
+  - "Explain the IAM policy evaluation logic and how Allow/Deny interact"
+  - "Design least-privilege IAM policies for common use cases"
+  - "Use IAM roles, STS, and assume-role for cross-account access"
+  - "Debug access denied errors using policy simulator and CloudTrail"
+  - "Implement IAM best practices: MFA, SCPs, permission boundaries"
+
+key_concepts:
+  - name: "IAM Policy Types"
+    summary: "Identity-based (attached to user/role), Resource-based (attached to resource), SCPs (org-level deny), Permission Boundaries"
+    production_relevance: critical
+  - name: "Policy Evaluation Logic"
+    summary: "Explicit Deny always wins. Then: SCP allow, then resource-based allow OR identity-based allow. Default is implicit deny."
+    production_relevance: critical
+  - name: "IAM Roles and STS"
+    summary: "Roles are assumed temporarily via STS:AssumeRole; returns short-lived credentials; used for EC2 instance profiles, Lambda, cross-account"
+    production_relevance: critical
+  - name: "Permission Boundaries"
+    summary: "Max permission ceiling for an identity; even if policy allows X, boundary must also allow X"
+    production_relevance: high
+  - name: "SCPs (Service Control Policies)"
+    summary: "Org-level guardrails applied to accounts; can only restrict, never grant; evaluated before any identity-based policy"
+    production_relevance: high
+
+common_misconceptions:
+  - "Resource-based policies and identity-based policies both need to allow an action — for same-account access, either one is sufficient (cross-account needs both)"
+  - "An explicit Allow overrides an explicit Deny — Deny ALWAYS wins regardless of any Allow"
+  - "Removing a policy from a user removes their access — if they have another policy granting it, access remains"
+  - "IAM roles are like IAM users — roles are not permanent identities; they are assumed temporarily"
+  - "SCPs grant permissions — SCPs only restrict; they can never grant permissions beyond what identity policies allow"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "IAM users, groups, and roles — users authenticate with credentials, roles are assumed"
+      - "IAM policies are JSON documents with Effect, Action, Resource"
+      - "Attach policies to users/groups/roles to grant permissions"
+      - "Root account should not be used for daily operations"
+    key_concepts_to_mention:
+      - "users / groups / roles"
+      - "policy (Effect, Action, Resource)"
+      - "least privilege"
+      - "MFA"
+
+  intermediate:
+    expected_understanding:
+      - "STS AssumeRole: how EC2 instances, Lambda functions, and CI/CD assume roles"
+      - "Trust policies: who is allowed to assume this role"
+      - "Policy evaluation: explicit deny > allow > implicit deny"
+      - "Cross-account access: identity-based + resource-based OR cross-account role assumption"
+      - "IAM policy conditions: aws:SourceIP, aws:RequestedRegion, aws:MultiFactorAuthPresent"
+    key_concepts_to_mention:
+      - "STS AssumeRole"
+      - "trust policy"
+      - "policy evaluation order"
+      - "cross-account role"
+
+  senior:
+    expected_understanding:
+      - "Permission boundaries: max permissions ceiling; used to safely delegate IAM management"
+      - "SCPs: org-level restrictions that cannot be overridden by account-level policies"
+      - "ABAC: attribute-based access control with IAM tags for scalable policies"
+      - "IAM Conditions for fine-grained control: StringEquals, ArnLike, Bool"
+      - "CloudTrail + IAM policy simulator for access debugging"
+    key_concepts_to_mention:
+      - "permission boundaries"
+      - "SCPs"
+      - "ABAC with tags"
+      - "IAM policy simulator"
+
+  staff:
+    expected_understanding:
+      - "IAM strategy for a multi-account AWS organization: account vending, role federation"
+      - "Identity federation: SAML 2.0, OIDC, AWS SSO/IAM Identity Center"
+      - "Secrets rotation strategy: Secrets Manager vs Parameter Store vs short-lived STS tokens"
+      - "Compliance controls: IAM Access Analyzer, unused access detection"
+    key_concepts_to_mention:
+      - "IAM Identity Center"
+      - "IAM Access Analyzer"
+      - "multi-account role strategy"
+      - "federation"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "A Lambda function returns 'Access Denied' when trying to call DynamoDB:GetItem. Walk me through how you debug this."
+  - angle: "Conceptual"
+    prompt: "Explain the IAM policy evaluation order when a request is made in a multi-account AWS organization with SCPs."
+  - angle: "Design"
+    prompt: "A development team needs to deploy to AWS from GitHub Actions. Design the IAM setup — no long-lived credentials."
+  - angle: "Trade-offs"
+    prompt: "When would you use IAM roles with permission boundaries versus SCPs to restrict what an account can do?"
+
+debugging_commands:
+  - command: "aws iam simulate-principal-policy --policy-source-arn <role-arn> --action-names <action> --resource-arns <resource>"
+    purpose: "Simulate whether a principal can perform an action — shows which policy allowed or denied"
+  - command: "aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRole"
+    purpose: "Find all AssumeRole events in CloudTrail for auditing role assumption"
+  - command: "aws iam get-policy-version --policy-arn <arn> --version-id v1"
+    purpose: "Read the current version of a managed policy"
+  - command: "aws iam list-attached-role-policies --role-name <role>"
+    purpose: "List all policies attached to a role"
+  - command: "aws sts get-caller-identity"
+    purpose: "Verify which identity (user or role) is being used for the current session"
+
+scenario_seeds:
+  - title: "The CI/CD Access Denied"
+    setup: "GitHub Actions pipeline fails with AccessDenied on S3:PutObject. The IAM role used by the pipeline has an S3 policy that allows PutObject on the target bucket. CloudTrail shows the call was made."
+    hint: "The S3 bucket has a resource-based policy with explicit Deny for all principals except a specific role. For cross-account access both the identity policy and resource policy must allow. Or an SCP is blocking it."
+    difficulty: intermediate
+
+  - title: "The Ghost Permission"
+    setup: "An engineer's IAM user was removed from the 'developers' group to revoke S3 access. They can still read from S3. No other groups are visible in the console."
+    hint: "The engineer has an inline policy directly on their user that also grants S3 read. Removing from group removed one source of permission but not the inline policy."
+    difficulty: intermediate
+
+  - title: "The Confused Delegation"
+    setup: "A developer team lead was given permission to create IAM roles for their team. They created a role with AdministratorAccess and are now using it for their work."
+    hint: "IAM delegation without permission boundaries allows privilege escalation. The team lead's own permissions should have been bounded; adding a permission boundary would cap what roles they can create."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows explicit Deny always wins regardless of any Allow"
+      - "Can explain trust policy (who can assume) vs permission policy (what they can do)"
+      - "Understands STS AssumeRole returns temporary credentials"
+      - "Knows SCPs restrict but never grant"
+    red_flags:
+      - "Thinks Allow can override Deny"
+      - "Cannot explain what a trust policy is"
+      - "Confuses IAM roles with IAM users"
+      - "Thinks SCPs can grant additional permissions"
+
+  reasoning:
+    strong_signals:
+      - "Systematically checks: identity policy → resource policy → SCP → permission boundary"
+      - "Uses policy simulator before debugging CloudTrail"
+    red_flags:
+      - "Only checks the attached role policy when debugging access denied"
+
+  production_thinking:
+    strong_signals:
+      - "Recommends OIDC/identity federation instead of long-lived access keys for CI/CD"
+      - "Mentions principle of least privilege proactively"
+      - "Considers permission boundaries when delegating IAM management"
+    red_flags:
+      - "Recommends using root credentials or IAM user access keys in CI/CD"
+      - "Creates AdministratorAccess policies for convenience"
+
+  communication:
+    strong_signals:
+      - "Can walk through the policy evaluation order step-by-step"
+    red_flags:
+      - "Vague about how Allow/Deny interact"
+
+follow_up_questions:
+  - trigger: "User mentions assume role"
+    question: "A CI/CD pipeline in account A needs to deploy to account B. Walk me through the exact IAM setup — trust policies, permission policies, and the STS call."
+  - trigger: "User mentions SCPs"
+    question: "You want to prevent any EC2 instances above t3.large from being launched in dev accounts. How do you implement this with SCPs?"
+  - trigger: "User answers well"
+    question: "What is an IAM permission boundary? When would you use one, and can it be used to grant permissions beyond the identity policy?"
+
+references:
+  - title: "IAM Policy Evaluation Logic"
+    url: "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html"
+  - title: "IAM Best Practices"
+    url: "https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html"

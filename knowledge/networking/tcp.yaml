@@ -1,0 +1,172 @@
+topic: tcp
+display_name: "TCP"
+domain: networking
+category: "OS & Networking"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites: []
+
+learning_objectives:
+  - "Explain the TCP three-way handshake and four-way teardown"
+  - "Interpret connection states (TIME_WAIT, CLOSE_WAIT, SYN_SENT, ESTABLISHED)"
+  - "Debug connection issues using ss and netstat"
+  - "Explain TCP congestion control and its practical implications"
+  - "Tune TCP parameters for high-throughput or low-latency workloads"
+
+key_concepts:
+  - name: "Three-Way Handshake"
+    summary: "SYN → SYN-ACK → ACK; establishes sequence numbers and window sizes before data transfer"
+    production_relevance: critical
+  - name: "Connection States"
+    summary: "LISTEN, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT, TIME_WAIT, CLOSE_WAIT, CLOSED"
+    production_relevance: critical
+  - name: "TIME_WAIT"
+    summary: "2×MSL wait after connection close to absorb delayed packets; can exhaust ephemeral ports under high connection rate"
+    production_relevance: critical
+  - name: "TCP Window and Flow Control"
+    summary: "Receiver advertises window size; sender cannot exceed it; limits throughput on high-latency links"
+    production_relevance: high
+  - name: "Congestion Control"
+    summary: "Slow start → congestion avoidance → fast retransmit → fast recovery; CUBIC is Linux default"
+    production_relevance: high
+  - name: "Keepalive"
+    summary: "Probes to detect dead connections; configurable interval and count; important for long-lived connections through NAT/firewalls"
+    production_relevance: high
+
+common_misconceptions:
+  - "TIME_WAIT is an error — it is normal; it prevents delayed packets from being accepted by a new connection"
+  - "CLOSE_WAIT and TIME_WAIT are the same — TIME_WAIT is on the active closer; CLOSE_WAIT means the app hasn't called close()"
+  - "TCP connection is established after SYN-ACK — it is established after the final ACK (three-way handshake complete)"
+  - "Increasing tcp_tw_reuse solves all TIME_WAIT problems — it only helps for outbound connections to the same server"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "TCP is connection-oriented and reliable; UDP is connectionless and unreliable"
+      - "Three-way handshake establishes a TCP connection"
+      - "TCP guarantees delivery and ordering; UDP does not"
+      - "Ports 0-1023 are well-known; 1024-65535 are dynamic/ephemeral"
+    key_concepts_to_mention:
+      - "SYN / SYN-ACK / ACK"
+      - "TCP vs UDP"
+      - "port numbers"
+      - "connection-oriented"
+
+  intermediate:
+    expected_understanding:
+      - "Connection states: ESTABLISHED, TIME_WAIT, CLOSE_WAIT and what each means"
+      - "CLOSE_WAIT means remote end closed but local app hasn't called close() — usually a bug"
+      - "TIME_WAIT port exhaustion under high connection rate"
+      - "ss -s or netstat -s for connection state summary"
+      - "TCP keepalive for long-lived connections through firewalls"
+    key_concepts_to_mention:
+      - "CLOSE_WAIT vs TIME_WAIT"
+      - "port exhaustion"
+      - "ss / netstat"
+      - "TCP keepalive"
+
+  senior:
+    expected_understanding:
+      - "TCP congestion control: slow start, congestion avoidance, CUBIC, BBR"
+      - "Bandwidth-delay product: why high-latency links need larger window sizes"
+      - "tcp_tw_reuse and tcp_tw_recycle (deprecated) for TIME_WAIT handling"
+      - "SYN flood protection: SYN cookies"
+      - "TCP tuning: /proc/sys/net/ipv4/ parameters, socket buffer sizes"
+    key_concepts_to_mention:
+      - "CUBIC / BBR congestion control"
+      - "bandwidth-delay product"
+      - "SYN cookies"
+      - "socket buffer tuning"
+
+  staff:
+    expected_understanding:
+      - "TCP performance in cloud environments: jumbo frames, NIC offloading, DPDK"
+      - "HTTP/2 multiplexing and how it avoids TCP HOL blocking (vs HTTP/1.1)"
+      - "QUIC/HTTP/3: UDP-based, avoids TCP connection overhead, handles packet loss better"
+      - "Connection pooling patterns and their relationship to TCP connection overhead"
+    key_concepts_to_mention:
+      - "HTTP/2 multiplexing"
+      - "QUIC / HTTP/3"
+      - "TCP HOL blocking"
+      - "NIC offloading"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "ss -s shows 50,000 connections in TIME_WAIT state. Some connections are starting to fail. What is happening and what do you do?"
+  - angle: "Debugging"
+    prompt: "An application is leaking CLOSE_WAIT connections. How do you identify which connections and what's causing it?"
+  - angle: "Conceptual"
+    prompt: "Walk me through the TCP three-way handshake and explain why all three steps are necessary."
+  - angle: "Trade-offs"
+    prompt: "When would you choose UDP over TCP for an application?"
+
+debugging_commands:
+  - command: "ss -s"
+    purpose: "Socket statistics summary — shows counts of connections in each state"
+  - command: "ss -tan | grep TIME_WAIT | wc -l"
+    purpose: "Count of TCP connections currently in TIME_WAIT"
+  - command: "ss -tan state close-wait"
+    purpose: "Show all connections in CLOSE_WAIT state with remote addresses"
+  - command: "cat /proc/sys/net/ipv4/ip_local_port_range"
+    purpose: "Show the ephemeral port range — max concurrent outbound connections"
+  - command: "netstat -s | grep -i retransmit"
+    purpose: "Count of TCP retransmissions — high count indicates network or congestion issues"
+
+scenario_seeds:
+  - title: "Port Exhaustion"
+    setup: "A reverse proxy starts failing to establish new connections to backend servers with 'Cannot assign requested address'. ss -s shows 25,000 TIME_WAIT connections. Ephemeral port range is 1024-65535."
+    hint: "Port exhaustion: all ephemeral ports are consumed by TIME_WAIT connections to the same backend (same src_ip:dst_ip:dst_port combination). Enable tcp_tw_reuse or expand the port range or use connection pooling."
+    difficulty: senior
+
+  - title: "The Growing CLOSE_WAIT"
+    setup: "After 24 hours, the application has thousands of CLOSE_WAIT connections accumulating. New connections work fine. ss shows remote end already closed (FIN_WAIT_2 on remote). The count grows until OOM."
+    hint: "The application is not calling close() on sockets after the remote end disconnects. A socket handler has a bug — receiving FIN but not closing the socket. This is a code bug, not a tuning issue."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Can explain all three handshake steps and why each is necessary"
+      - "Knows CLOSE_WAIT means app bug (not calling close); TIME_WAIT is normal"
+      - "Understands port exhaustion in TIME_WAIT context"
+      - "Can explain the difference between TCP and UDP and when to use each"
+    red_flags:
+      - "Thinks TIME_WAIT is an error that needs to be eliminated"
+      - "Confuses CLOSE_WAIT with TIME_WAIT"
+      - "Cannot explain what happens during the TCP teardown sequence"
+
+  reasoning:
+    strong_signals:
+      - "Uses ss to check connection states before jumping to conclusions"
+      - "Checks ephemeral port range when diagnosing connection failures"
+    red_flags:
+      - "Immediately tunes kernel parameters without understanding the root cause"
+
+  production_thinking:
+    strong_signals:
+      - "Recommends connection pooling to reduce TIME_WAIT volume"
+      - "Considers keepalive settings for connections through firewalls"
+    red_flags:
+      - "Disables TIME_WAIT without understanding the risk"
+
+  communication:
+    strong_signals:
+      - "Can draw the state machine for TCP connection establishment and teardown"
+    red_flags:
+      - "Vague about what happens at the protocol level during connection close"
+
+follow_up_questions:
+  - trigger: "User mentions TIME_WAIT"
+    question: "Why does TIME_WAIT need to last 2×MSL? What specific problem is it preventing?"
+  - trigger: "User mentions congestion control"
+    question: "How does TCP slow start work, and what is its impact on short-lived connections vs long-lived ones?"
+  - trigger: "User mentions UDP"
+    question: "If UDP offers no reliability guarantees, how does a video streaming application ensure smooth playback over UDP?"
+
+references:
+  - title: "TCP Connection States"
+    url: "https://man7.org/linux/man-pages/man7/tcp.7.html"
+  - title: "Illustrated Guide to TCP"
+    url: "https://www.cloudflare.com/learning/ddos/glossary/tcp-ip/"

@@ -1,0 +1,157 @@
+topic: load-balancing
+display_name: "Load Balancing Concepts"
+domain: networking
+category: "OS & Networking"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - networking/tcp
+
+learning_objectives:
+  - "Compare L4 vs L7 load balancing and choose the right layer for each use case"
+  - "Explain load balancing algorithms and their trade-offs"
+  - "Understand health checking strategies and their effect on availability"
+  - "Design a load balancing architecture for high availability"
+  - "Explain connection persistence (session affinity) and its limitations"
+
+key_concepts:
+  - name: "L4 Load Balancing"
+    summary: "Routes at TCP/UDP level by IP and port; fast, no protocol awareness; preserves source IP; for any protocol"
+    production_relevance: critical
+  - name: "L7 Load Balancing"
+    summary: "Routes at HTTP level by URL, host header, cookies; SSL termination; content inspection; HTTP-only"
+    production_relevance: critical
+  - name: "Round Robin"
+    summary: "Distributes requests in sequence; simple and fair; doesn't account for connection duration or server load"
+    production_relevance: critical
+  - name: "Least Connections"
+    summary: "Routes to server with fewest active connections; better for variable request duration"
+    production_relevance: high
+  - name: "Consistent Hashing"
+    summary: "Routes by hash of key (IP, URL); same key always goes to same server; used for session affinity and caches"
+    production_relevance: high
+  - name: "Active Health Checks"
+    summary: "Load balancer periodically probes backends; removes unhealthy backends without waiting for user failure"
+    production_relevance: critical
+
+common_misconceptions:
+  - "Round robin distributes load evenly — it distributes requests evenly; if requests have different costs, load can be uneven"
+  - "L4 load balancers can't do SSL — they can pass through SSL to backends; they just can't inspect the content"
+  - "Health check passing means the service is fully ready — health checks test reachability; they may not test application readiness"
+  - "Adding more servers always improves performance — a slow or misconfigured health check can direct traffic to unhealthy servers"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "Load balancer distributes traffic to prevent single-server bottleneck"
+      - "L4 = TCP/IP level routing; L7 = HTTP level routing"
+      - "Round robin is the simplest algorithm"
+      - "Health checks remove failed servers from rotation"
+    key_concepts_to_mention:
+      - "L4 vs L7"
+      - "round robin"
+      - "health check"
+      - "distribution"
+
+  intermediate:
+    expected_understanding:
+      - "Algorithm comparison: round robin vs least connections vs IP hash vs weighted"
+      - "Session affinity (sticky sessions): consistent hashing or cookie-based"
+      - "L7 enables path-based routing, host-based routing, header inspection"
+      - "SSL/TLS termination at load balancer vs pass-through vs re-encryption"
+      - "Active vs passive health checks"
+    key_concepts_to_mention:
+      - "least connections"
+      - "consistent hashing"
+      - "SSL termination"
+      - "active vs passive health check"
+
+  senior:
+    expected_understanding:
+      - "Consistent hashing with virtual nodes for minimal re-distribution when servers are added/removed"
+      - "Global load balancing: anycast, GeoDNS, latency-based routing"
+      - "Load balancer as single point of failure: HA pairs, ECMP, anycast"
+      - "HTTP/2 and connection multiplexing impact on load balancing"
+      - "gRPC load balancing challenges: long-lived connections defeat connection-based algorithms"
+    key_concepts_to_mention:
+      - "consistent hashing with virtual nodes"
+      - "anycast"
+      - "gRPC load balancing"
+      - "ECMP"
+
+  staff:
+    expected_understanding:
+      - "Service mesh as load balancing: Envoy proxy, client-side load balancing"
+      - "Load balancing observability: p99 latency per backend, error rate, active connections"
+      - "Multi-tier load balancing: global → regional → service mesh"
+    key_concepts_to_mention:
+      - "client-side load balancing"
+      - "Envoy / service mesh"
+      - "multi-tier load balancing"
+
+interview_angles:
+  - angle: "Conceptual"
+    prompt: "When would you use L4 load balancing over L7, given that L7 can do everything L4 can?"
+  - angle: "Trade-offs"
+    prompt: "Compare round robin vs least connections vs consistent hashing. When is each algorithm the best choice?"
+  - angle: "Design"
+    prompt: "You have a Redis cache cluster behind a load balancer. Why is round robin the wrong algorithm, and what should you use instead?"
+  - angle: "Production scenario"
+    prompt: "After adding a new server to your load balancer pool, you notice it is receiving all the new connections while old servers idle. Why?"
+
+scenario_seeds:
+  - title: "The Hot Shard"
+    setup: "A Redis cluster is behind a load balancer using round robin. After a code change, 90% of cache requests target the same key prefix. One Redis instance is overwhelmed; others are idle."
+    hint: "Round robin distributes requests but not by key. Same keys go to different Redis nodes each request, causing cache misses everywhere. Use consistent hashing to route the same key to the same server."
+    difficulty: intermediate
+
+  - title: "The gRPC Imbalance"
+    setup: "A gRPC service is behind an L4 load balancer. After deployment, one backend has 1000 active connections; another has 5. Traffic is distributed unevenly."
+    hint: "gRPC uses long-lived HTTP/2 connections with multiplexing. L4 load balancer balanced the initial connections but gRPC reuses them. Newer backends get fewer connections because fewer clients established connections to them. Need L7 load balancing that understands gRPC streams."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Can explain L4 vs L7 and a concrete use case where L4 is preferred"
+      - "Knows consistent hashing reduces redistribution when servers are added/removed"
+      - "Understands gRPC long-lived connection problem with connection-based algorithms"
+      - "Can explain active vs passive health checking"
+    red_flags:
+      - "Cannot explain a use case where L4 is better than L7"
+      - "Thinks round robin is always appropriate"
+      - "Doesn't know what consistent hashing is"
+
+  reasoning:
+    strong_signals:
+      - "Matches algorithm to the workload characteristics (request duration, statefulness)"
+      - "Considers health check failure modes — what happens if health check is too sensitive?"
+    red_flags:
+      - "Picks an algorithm without considering the workload"
+
+  production_thinking:
+    strong_signals:
+      - "Considers load balancer HA (what if the LB itself fails?)"
+      - "Mentions health check tuning to avoid false positives during deployments"
+    red_flags:
+      - "Designs a load balancer architecture without redundancy"
+
+  communication:
+    strong_signals:
+      - "Can explain the trade-off between session affinity and even load distribution"
+    red_flags:
+      - "Vague about how consistent hashing differs from IP hashing"
+
+follow_up_questions:
+  - trigger: "User mentions consistent hashing"
+    question: "Without virtual nodes, consistent hashing creates uneven load when a server is removed. Why? How do virtual nodes solve this?"
+  - trigger: "User mentions health checks"
+    question: "Your health check is too aggressive and triggers during normal deployments. How do you tune health checks to avoid false positives?"
+
+references:
+  - title: "Load Balancing Algorithms Explained"
+    url: "https://nginx.org/en/docs/http/load_balancing.html"
+  - title: "Consistent Hashing"
+    url: "https://www.toptal.com/big-data/consistent-hashing"

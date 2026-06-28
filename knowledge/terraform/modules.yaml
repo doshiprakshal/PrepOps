@@ -1,0 +1,155 @@
+topic: modules
+display_name: "Terraform Modules"
+domain: terraform
+category: "Infrastructure as Code"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - terraform/state
+
+learning_objectives:
+  - "Explain when to extract a Terraform module vs keeping code inline"
+  - "Structure modules with clear inputs, outputs, and documentation"
+  - "Use the Terraform Registry and private module registries"
+  - "Version modules and manage module version upgrades safely"
+  - "Design a module strategy for a platform team serving multiple product teams"
+
+key_concepts:
+  - name: "Module Structure"
+    summary: "main.tf (resources), variables.tf (inputs), outputs.tf (outputs), versions.tf (provider pins)"
+    production_relevance: critical
+  - name: "Module Sources"
+    summary: "Local paths, Git URLs, Terraform Registry, private registries — each with different versioning semantics"
+    production_relevance: critical
+  - name: "Input Variables"
+    summary: "Typed inputs with validation, defaults, and descriptions; the public API of a module"
+    production_relevance: critical
+  - name: "Module Outputs"
+    summary: "Values exposed to the calling module; used by other resources and remote state data sources"
+    production_relevance: critical
+  - name: "Module Versioning"
+    summary: "Semantic versioning via Git tags; always pin versions in production; use ~> for minor-compatible updates"
+    production_relevance: high
+
+common_misconceptions:
+  - "More modules is always better — excessive module extraction adds abstraction without benefit; start with fewer"
+  - "Modules are reusable across all environments without modification — environment-specific behaviour needs careful variable design"
+  - "Module outputs automatically update dependent modules — Terraform still requires explicit plan/apply to propagate"
+  - "Local module paths work in CI/CD the same as in local dev — Git-based sources are more reliable in automation"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "A module is a directory of Terraform files called as a unit"
+      - "Call a module with module block specifying source and required variables"
+      - "module.name.output_name to reference module outputs"
+      - "terraform get or terraform init downloads modules"
+    key_concepts_to_mention:
+      - "module block"
+      - "source"
+      - "variables and outputs"
+      - "terraform init"
+
+  intermediate:
+    expected_understanding:
+      - "variables.tf defines typed inputs with validation; outputs.tf exposes values"
+      - "Version pinning with source = 'git::url?ref=v1.2.3' or registry version constraints"
+      - "count and for_each work inside modules for resource creation loops"
+      - "Nested modules: calling modules from within modules; depth adds complexity"
+    key_concepts_to_mention:
+      - "variable validation"
+      - "version pinning"
+      - "for_each in modules"
+      - "output sensitive = true"
+
+  senior:
+    expected_understanding:
+      - "Module design principles: narrow interface (few required vars), sensible defaults, version stability"
+      - "Breaking changes in modules: major version bumps, migration guides"
+      - "Dynamic blocks inside modules for optional resource configurations"
+      - "Module testing with Terratest or native terraform test"
+      - "Private module registry: Terraform Cloud, Artifactory, or git-based"
+    key_concepts_to_mention:
+      - "module interface design"
+      - "semver for modules"
+      - "Terratest / terraform test"
+      - "private registry"
+
+  staff:
+    expected_understanding:
+      - "Platform team module strategy: base modules vs product modules vs composition modules"
+      - "Module deprecation and migration strategy for internal consumers"
+      - "Enforcing module use via Sentinel policies or OPA"
+      - "Module versioning governance: who can publish? How are breaking changes reviewed?"
+    key_concepts_to_mention:
+      - "module governance"
+      - "Sentinel / OPA"
+      - "platform vs product module hierarchy"
+
+interview_angles:
+  - angle: "Design"
+    prompt: "A platform team serves 30 product teams who all need similar AWS networking setup. How do you design the module strategy?"
+  - angle: "Trade-offs"
+    prompt: "When does extracting a Terraform module add value and when does it add unnecessary complexity?"
+  - angle: "Production scenario"
+    prompt: "You update a widely-used internal module with a breaking change. How do you roll it out without breaking all consumers?"
+  - angle: "Debugging"
+    prompt: "After upgrading a module version, terraform plan shows resources being recreated. Why might this happen?"
+
+debugging_commands:
+  - command: "terraform get -update"
+    purpose: "Download/update modules from their sources"
+  - command: "terraform providers"
+    purpose: "Show providers required by the current configuration including modules"
+  - command: "terraform console"
+    purpose: "Interactive REPL to test expressions including module output references"
+
+scenario_seeds:
+  - title: "The Breaking Module Upgrade"
+    setup: "Your team upgraded a shared networking module from v1.2.0 to v2.0.0. terraform plan now shows 3 VPC resources being destroyed and recreated. This affects production."
+    hint: "Module v2.0.0 changed resource naming convention. The old resources need state mv to new addresses before upgrading."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows module structure: main.tf, variables.tf, outputs.tf, versions.tf"
+      - "Can explain version pinning with Git refs or registry constraints"
+      - "Understands the module interface concept — narrow inputs with sensible defaults"
+    red_flags:
+      - "Cannot explain how to version a module"
+      - "Thinks modules automatically share state with their callers"
+
+  reasoning:
+    strong_signals:
+      - "Considers whether a module is actually needed before extracting one"
+      - "Thinks about consumers when designing module interfaces"
+    red_flags:
+      - "Advocates for extracting every resource into a module regardless of reuse"
+
+  production_thinking:
+    strong_signals:
+      - "Plans module upgrades carefully to avoid breaking consumers"
+      - "Considers backward compatibility when changing module variables"
+    red_flags:
+      - "Would make breaking module changes without a migration path"
+
+  communication:
+    strong_signals:
+      - "Can explain the difference between a module's public interface and its implementation"
+    red_flags:
+      - "Cannot explain what makes a good module API vs a poor one"
+
+follow_up_questions:
+  - trigger: "User designs modules"
+    question: "How do you test a Terraform module before publishing a new version?"
+  - trigger: "User mentions breaking changes"
+    question: "How would you deprecate a module variable while maintaining backward compatibility?"
+
+references:
+  - title: "Terraform Module Documentation"
+    url: "https://developer.hashicorp.com/terraform/language/modules"
+  - title: "Terraform Registry"
+    url: "https://registry.terraform.io/"

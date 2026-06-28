@@ -1,0 +1,161 @@
+topic: slos-error-budgets
+display_name: "SLIs, SLOs, SLAs, and Error Budgets"
+domain: sre
+category: "Engineering Practices"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites: []
+
+learning_objectives:
+  - "Define SLI, SLO, and SLA and explain the relationship between them"
+  - "Choose appropriate SLIs for different service types"
+  - "Calculate error budgets and explain how to use them for decision making"
+  - "Explain toil and why reducing toil is an SRE priority"
+  - "Design an SLO framework for a new service"
+
+key_concepts:
+  - name: "SLI (Service Level Indicator)"
+    summary: "Quantitative measure of service behaviour: request success rate, latency, error rate, saturation"
+    production_relevance: critical
+  - name: "SLO (Service Level Objective)"
+    summary: "Target value for an SLI over a time window: '99.9% of requests succeed in under 300ms over 30 days'"
+    production_relevance: critical
+  - name: "SLA (Service Level Agreement)"
+    summary: "Contractual commitment to customers; SLO is internal target; SLA has legal/financial consequences for breach"
+    production_relevance: critical
+  - name: "Error Budget"
+    summary: "Remaining allowed failures before SLO breach: 1 - SLO = budget. Used to balance reliability vs velocity."
+    production_relevance: critical
+  - name: "Toil"
+    summary: "Manual, repetitive, automatable, reactive work that scales linearly with service growth; not engineering work"
+    production_relevance: high
+  - name: "Burn Rate"
+    summary: "How fast the error budget is being consumed; burn rate > 1 means SLO will be breached before window ends"
+    production_relevance: high
+
+common_misconceptions:
+  - "SLO and SLA are the same — SLO is an internal operational target; SLA is a customer-facing contractual commitment"
+  - "Higher SLO is always better — 99.999% SLO costs significantly more in engineering and infrastructure than 99.9%"
+  - "Error budget is wasted if unused — unused budget represents velocity you left on the table; it allows deployment risk"
+  - "SLIs should be measured from within the service — SLIs should be measured from the user's perspective, not the server's"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "SLI is a metric; SLO is the target; SLA is the customer contract"
+      - "Error budget = 1 - SLO = amount of allowed downtime/errors"
+      - "99.9% uptime allows 43.8 minutes/month of downtime"
+      - "Breaching SLO burns error budget; once exhausted, stop risky deployments"
+    key_concepts_to_mention:
+      - "SLI / SLO / SLA"
+      - "error budget"
+      - "99.9% = 43.8 minutes/month"
+
+  intermediate:
+    expected_understanding:
+      - "SLI types: availability (success rate), latency (p50/p99), throughput, quality"
+      - "SLO time windows: rolling 30-day vs calendar month trade-offs"
+      - "Burn rate alerting: fast burn (1h window) and slow burn (6h window) alerts"
+      - "Error budget policies: freeze deployments, slow down feature work when budget low"
+      - "Toil definition and why the SRE 50% toil cap exists"
+    key_concepts_to_mention:
+      - "SLI types"
+      - "burn rate alerting"
+      - "error budget policy"
+      - "toil"
+
+  senior:
+    expected_understanding:
+      - "Multi-window alerting: fast burn catches acute outages; slow burn catches chronic degradation"
+      - "Appropriate SLO tightness: 99.9% vs 99.99% vs 99.999% — cost and feasibility"
+      - "SLO for dependent services: cascading SLO design"
+      - "User journey SLOs vs component SLOs"
+      - "SLI measurement strategies: client-side vs server-side vs synthetic"
+    key_concepts_to_mention:
+      - "multi-window burn rate"
+      - "user journey SLO"
+      - "synthetic monitoring"
+      - "cascading SLO"
+
+  staff:
+    expected_understanding:
+      - "SLO program rollout: how to get engineering teams to adopt and own SLOs"
+      - "Error budget politics: how to use error budget to negotiate with product teams"
+      - "SLO for APIs, data pipelines, and batch jobs — different SLI types"
+      - "Shared fate model: SRE and dev team share error budget accountability"
+    key_concepts_to_mention:
+      - "error budget negotiation"
+      - "SLO program adoption"
+      - "shared fate"
+      - "data pipeline SLOs"
+
+interview_angles:
+  - angle: "Conceptual"
+    prompt: "Explain the relationship between SLI, SLO, SLA, and error budget. Use a concrete example."
+  - angle: "Design"
+    prompt: "You are the first SRE hire at a startup. The product has no SLOs. How do you start defining them? Walk me through your approach."
+  - angle: "Trade-offs"
+    prompt: "The product team wants a 99.99% availability SLO. Engineering says 99.9% is realistic. How do you facilitate this decision?"
+  - angle: "Production scenario"
+    prompt: "Your error budget is 50% consumed in week 1 of a 30-day window. What do you do?"
+
+scenario_seeds:
+  - title: "The Burned Budget"
+    setup: "It's day 10 of 30. Your 99.9% SLO has already consumed 80% of the error budget due to a 45-minute outage on day 3. Three deployments are scheduled for this week."
+    hint: "With 80% consumed in 10 days, burn rate is ~8x. On current trajectory, budget exhausts by day 13. Apply the error budget policy: freeze non-critical deployments, focus on reliability improvements."
+    difficulty: intermediate
+
+  - title: "The Invisible Degradation"
+    setup: "Your SLO dashboard shows 99.95% success rate — comfortably within the 99.9% SLO. But customer support tickets about slowness have tripled this week. What's wrong?"
+    hint: "Your SLI only measures success rate, not latency. The service is slow (p99 latency at 5s) but requests are 'succeeding'. The SLI doesn't capture the user experience. Need to add latency SLI."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Correctly distinguishes SLI (metric), SLO (target), SLA (contract)"
+      - "Can calculate error budget from SLO (e.g. 99.9% → 0.1% → 43.8 min/month)"
+      - "Knows burn rate and why it matters for alerting"
+      - "Understands that SLIs should be measured from user perspective"
+    red_flags:
+      - "Confuses SLO and SLA"
+      - "Cannot calculate error budget"
+      - "Thinks higher SLO is always better without considering cost"
+
+  reasoning:
+    strong_signals:
+      - "Considers both success rate AND latency when designing SLIs"
+      - "Asks what user actions matter most before defining SLOs"
+    red_flags:
+      - "Defines SLIs based on what's easy to measure, not what users experience"
+
+  production_thinking:
+    strong_signals:
+      - "Has an error budget policy with specific actions at thresholds"
+      - "Considers cascading SLO dependencies"
+      - "Thinks about what to do when budget is low, not just when it's breached"
+    red_flags:
+      - "Treats SLO as just a number without a policy for what happens when it's breached"
+
+  communication:
+    strong_signals:
+      - "Can use the Google SRE framework vocabulary correctly"
+      - "Can explain error budgets to a non-technical product manager"
+    red_flags:
+      - "Uses SLO and SLA interchangeably"
+
+follow_up_questions:
+  - trigger: "User mentions error budget"
+    question: "Your SLO is 99.9%. An outage lasted 44 minutes this month. Is your error budget exhausted? How much is left?"
+  - trigger: "User mentions burn rate"
+    question: "Your burn rate is 14x over the last hour. What does this mean and what action do you take?"
+  - trigger: "User designs SLOs"
+    question: "How do you set the right SLO tightness? What would make you choose 99.9% over 99.99%?"
+
+references:
+  - title: "Google SRE Book: Service Level Objectives"
+    url: "https://sre.google/sre-book/service-level-objectives/"
+  - title: "Error Budget Policy"
+    url: "https://sre.google/workbook/error-budget-policy/"

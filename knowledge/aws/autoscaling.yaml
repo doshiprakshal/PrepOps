@@ -1,0 +1,167 @@
+topic: autoscaling
+display_name: "AWS Auto Scaling"
+domain: aws
+category: "Cloud"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - aws/iam
+
+learning_objectives:
+  - "Explain EC2 Auto Scaling Group components and lifecycle"
+  - "Configure scaling policies: target tracking, step scaling, scheduled"
+  - "Debug scaling events that don't trigger or trigger incorrectly"
+  - "Design a scaling strategy that balances cost, performance, and reliability"
+  - "Handle instance lifecycle hooks for graceful startup and shutdown"
+
+key_concepts:
+  - name: "Auto Scaling Group (ASG)"
+    summary: "Manages a group of EC2 instances with min/max/desired capacity; scales based on policies or manual changes"
+    production_relevance: critical
+  - name: "Launch Template"
+    summary: "Defines instance configuration (AMI, instance type, IAM role, security groups) used when ASG launches new instances"
+    production_relevance: critical
+  - name: "Target Tracking Policy"
+    summary: "Simplest policy; ASG adjusts capacity to maintain a target metric (e.g. CPU at 50%); preferred default"
+    production_relevance: critical
+  - name: "Lifecycle Hooks"
+    summary: "Pause instance launch or termination to run custom actions (app init, graceful drain); prevents premature traffic"
+    production_relevance: high
+  - name: "Instance Refresh"
+    summary: "Rolling replacement of instances to apply new launch template versions without downtime"
+    production_relevance: high
+  - name: "Mixed Instance Policy"
+    summary: "Combine multiple instance types and On-Demand + Spot to optimize cost and availability"
+    production_relevance: high
+
+common_misconceptions:
+  - "Desired capacity is the minimum — minimum is a floor; desired is the current target that can be adjusted by policies"
+  - "Target tracking instantly adds capacity — there is a warmup period; CloudWatch alarm evaluation adds latency"
+  - "Spot Instances are reliable for stateful workloads — Spot can be reclaimed with 2-minute notice; use for stateless only"
+  - "Terminating an instance reduces the ASG count — only if the ASG is not set to maintain desired capacity; it will re-launch"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "ASG maintains min/desired/max instance count; scales up and down based on policies"
+      - "Launch Template defines what instances are launched"
+      - "Target tracking policy: add CPU alarm, ASG maintains target automatically"
+      - "Health checks: EC2 and ELB — ELB-based health checks are more application-aware"
+    key_concepts_to_mention:
+      - "min / desired / max"
+      - "launch template"
+      - "target tracking"
+      - "health check"
+
+  intermediate:
+    expected_understanding:
+      - "Scaling cooldowns: prevent rapid scale-in/out oscillation; default 300 seconds"
+      - "Lifecycle hooks: pause launch to run initialization scripts before marking instance InService"
+      - "Instance warmup: exclude new instances from metrics during startup period"
+      - "Scale-in protection: prevent specific instances from being terminated"
+      - "ASG integration with ELB: automatic registration/deregistration with connection draining"
+    key_concepts_to_mention:
+      - "cooldown period"
+      - "lifecycle hooks"
+      - "instance warmup"
+      - "ELB connection draining"
+
+  senior:
+    expected_understanding:
+      - "Mixed instance policy: multiple instance types for capacity resilience + Spot savings"
+      - "Instance Refresh: rolling AMI updates with min healthy percentage"
+      - "Predictive scaling for known traffic patterns (reduces scaling lag)"
+      - "Scaling on custom CloudWatch metrics (SQS queue depth, application RPS)"
+      - "Multi-AZ distribution and AZ rebalancing behaviour"
+    key_concepts_to_mention:
+      - "mixed instance policy"
+      - "instance refresh"
+      - "predictive scaling"
+      - "custom metrics for scaling"
+
+  staff:
+    expected_understanding:
+      - "Cost optimization: right-sizing, Savings Plans, Spot + On-Demand mix strategy"
+      - "ASG governance at scale: launch template versioning, drift from approved AMI"
+      - "Container-based alternatives (ECS, EKS with Karpenter) vs EC2 ASG"
+      - "Karpenter vs Cluster Autoscaler for Kubernetes node autoscaling trade-offs"
+    key_concepts_to_mention:
+      - "Karpenter"
+      - "Savings Plans + Spot strategy"
+      - "container vs VM autoscaling"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "Your ASG is not scaling up despite CPU being at 95% for 10 minutes. What do you investigate?"
+  - angle: "Production scenario"
+    prompt: "During a flash sale, your ASG scaled up 50 instances but users still saw errors for 8 minutes after scaling. Why?"
+  - angle: "Design"
+    prompt: "Design a cost-optimal scaling strategy for a stateless web service that has 10x traffic spikes every weekday at noon."
+  - angle: "Trade-offs"
+    prompt: "When would you use EC2 Auto Scaling Groups versus Kubernetes with Karpenter for running a fleet of stateless services?"
+
+debugging_commands:
+  - command: "aws autoscaling describe-scaling-activities --auto-scaling-group-name <name>"
+    purpose: "Shows all scaling events with reasons — why instances were launched or terminated"
+  - command: "aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names <name>"
+    purpose: "Full ASG configuration including policies, health check settings, and current instance list"
+  - command: "aws cloudwatch get-metric-statistics --namespace AWS/EC2 --metric-name CPUUtilization"
+    purpose: "Get historical CPU metrics to understand if scaling trigger should have fired"
+
+scenario_seeds:
+  - title: "The Slow Scale"
+    setup: "CPU hits 95% across all instances. The target tracking policy is set to 50% CPU. 8 minutes pass before any new instances appear. Users are experiencing timeouts."
+    hint: "CloudWatch alarm evaluation period (3x1min=3min), ASG scaling decision, instance launch (~2min), and warmup period all add up. Consider predictive scaling and pre-warming for known traffic patterns."
+    difficulty: intermediate
+
+  - title: "The Thrashing ASG"
+    setup: "The ASG is constantly scaling up and down every 5 minutes throughout the day. Instance count oscillates between 5 and 15. No traffic pattern matches this frequency."
+    hint: "Cooldown period is set to 0. CPU metric is bursty with short spikes. Increase cooldown period and use average CPU over longer period, or switch to target tracking with appropriate warmup."
+    difficulty: intermediate
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Understands the scaling latency chain: alarm → ASG decision → launch → warmup"
+      - "Can explain lifecycle hooks and when to use them"
+      - "Knows cooldown prevents oscillation"
+      - "Understands Spot interruption risk and which workloads are suitable"
+    red_flags:
+      - "Thinks scaling is instantaneous"
+      - "Would use Spot instances for stateful or latency-sensitive workloads"
+      - "Confuses ASG minimum with desired capacity"
+
+  reasoning:
+    strong_signals:
+      - "Checks scaling activity history first when debugging scaling issues"
+      - "Considers end-to-end latency (launch + warmup) when diagnosing late scaling"
+    red_flags:
+      - "Assumes the alarm is the problem without checking scaling activity"
+
+  production_thinking:
+    strong_signals:
+      - "Considers connection draining when instances terminate"
+      - "Plans for AZ failure when designing ASG distribution"
+      - "Mentions predictive scaling for known traffic patterns"
+    red_flags:
+      - "Designs scaling without considering warmup time impact on user experience"
+
+  communication:
+    strong_signals:
+      - "Can explain the sequence of events from a metric breach to a new instance serving traffic"
+    red_flags:
+      - "Vague about what triggers scaling and how long it takes"
+
+follow_up_questions:
+  - trigger: "User mentions lifecycle hooks"
+    question: "How do you use lifecycle hooks to ensure a new EC2 instance has finished downloading application artifacts before the ASG marks it InService?"
+  - trigger: "User mentions Spot"
+    question: "Design a mixed fleet that uses Spot Instances for 70% cost savings while maintaining reliability for a stateless web service."
+
+references:
+  - title: "EC2 Auto Scaling Documentation"
+    url: "https://docs.aws.amazon.com/autoscaling/ec2/userguide/"
+  - title: "Lifecycle Hooks"
+    url: "https://docs.aws.amazon.com/autoscaling/ec2/userguide/lifecycle-hooks.html"

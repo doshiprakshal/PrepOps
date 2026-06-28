@@ -1,0 +1,171 @@
+topic: performance
+display_name: "Linux Performance Analysis"
+domain: linux
+category: "OS & Networking"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites:
+  - linux/processes
+
+learning_objectives:
+  - "Use the USE method (Utilization, Saturation, Errors) to structure performance analysis"
+  - "Distinguish CPU-bound, memory-bound, and I/O-bound problems from system metrics"
+  - "Interpret top, vmstat, iostat, and sar output correctly"
+  - "Profile application and kernel performance with perf and flame graphs"
+  - "Identify and resolve CPU throttling, memory pressure, and I/O saturation"
+
+key_concepts:
+  - name: "USE Method"
+    summary: "For every resource: check Utilization, Saturation, Errors. Systematic approach to performance analysis."
+    production_relevance: critical
+  - name: "Load Average"
+    summary: "1/5/15 minute averages of runnable + uninterruptible processes; values above CPU count indicate saturation"
+    production_relevance: critical
+  - name: "CPU Steal Time"
+    summary: "Time the hypervisor gives CPU to another VM; visible in top as %st; indicates noisy neighbour"
+    production_relevance: high
+  - name: "I/O Wait"
+    summary: "%wa in top/iostat: CPU idle while waiting for I/O to complete; high wa with high ioutil indicates disk saturation"
+    production_relevance: critical
+  - name: "Memory Pressure"
+    summary: "Swap usage, page faults, OOM events — memory pressure degrades performance before OOM kill"
+    production_relevance: critical
+  - name: "Context Switches"
+    summary: "Voluntary (process yields) vs involuntary (preempted); excessive context switching indicates CPU saturation"
+    production_relevance: high
+
+common_misconceptions:
+  - "High load average always means high CPU usage — load average includes I/O-waiting processes, not just CPU-bound ones"
+  - "If CPU is at 80%, the system is doing fine — context switches and steal time matter as much as utilization"
+  - "Swap usage always means the system is in trouble — small swap usage is normal; heavy swapping is the problem"
+  - "iostat %util at 100% means the disk is broken — 100% utilization means the disk is fully busy, not failed"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "top shows CPU, memory, and top processes; load average shows 1/5/15 min averages"
+      - "High CPU in top's %us column means user processes are consuming CPU"
+      - "free -m shows memory usage; watch for low 'available' not just low 'free'"
+      - "df -h shows disk space; du -sh shows directory sizes"
+    key_concepts_to_mention:
+      - "top / htop"
+      - "load average"
+      - "free -m"
+      - "%us / %sy / %wa"
+
+  intermediate:
+    expected_understanding:
+      - "load average > number of CPUs indicates saturation"
+      - "vmstat columns: r (run queue), b (blocked on I/O), si/so (swap in/out), wa (I/O wait)"
+      - "iostat: %util shows disk busy time; await shows I/O latency; r/s and w/s show throughput"
+      - "Distinguishing CPU-bound (%us high) vs I/O-bound (%wa high) problems"
+      - "sar -u, sar -r, sar -d for historical CPU, memory, and disk data"
+    key_concepts_to_mention:
+      - "vmstat r column (run queue)"
+      - "iostat %util and await"
+      - "sar for historical data"
+      - "swap in/out rate (si/so)"
+
+  senior:
+    expected_understanding:
+      - "perf top and perf record for CPU profiling; flame graphs for visualization"
+      - "CPU steal time (%st) in virtualized environments and its impact"
+      - "Transparent Huge Pages (THP) — benefits for large memory workloads, latency spikes during compaction"
+      - "NUMA topology and memory locality for high-performance workloads"
+      - "Network performance: ss -s, /proc/net/dev, ethtool -S for NIC stats"
+    key_concepts_to_mention:
+      - "perf / flame graphs"
+      - "CPU steal time"
+      - "THP"
+      - "NUMA"
+
+  staff:
+    expected_understanding:
+      - "Brendan Gregg's USE method applied systematically to production incidents"
+      - "eBPF tools (bpftrace, bcc) for low-overhead production profiling"
+      - "cgroup resource accounting and container performance isolation"
+      - "Performance regression detection in CI/CD pipelines"
+    key_concepts_to_mention:
+      - "USE method"
+      - "eBPF / bpftrace"
+      - "performance regression testing"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "Load average is 20 on an 8-core machine. CPU shows 15% utilization in top. What's happening and how do you investigate?"
+  - angle: "Production scenario"
+    prompt: "Users report slow response times. The application team says their code hasn't changed. The database team says query times are normal. Where do you look?"
+  - angle: "Trade-offs"
+    prompt: "Transparent Huge Pages — when would you enable them and when would you disable them?"
+
+debugging_commands:
+  - command: "top -H -p <pid>"
+    purpose: "Show per-thread CPU usage for a specific process"
+  - command: "vmstat 1 10"
+    purpose: "System-wide CPU, memory, and I/O stats at 1-second intervals for 10 samples"
+  - command: "iostat -xz 1"
+    purpose: "Extended disk I/O stats per device — %util, await, r/s, w/s"
+  - command: "sar -u -r -d 1 10"
+    purpose: "CPU, memory, and disk historical stats (or live at 1s interval)"
+  - command: "perf top"
+    purpose: "Real-time CPU profiling showing hottest kernel and user functions"
+  - command: "ss -s"
+    purpose: "Socket statistics summary — useful for detecting connection saturation"
+
+scenario_seeds:
+  - title: "The Mystery Slowdown"
+    setup: "Application response times doubled at 14:00. CPU is at 15%. Load average is 18 on 8 cores. Database reports normal query times. No deployment happened."
+    hint: "vmstat shows high 'b' column and high 'wa'. A cron job started at 14:00 doing heavy disk writes, causing I/O saturation and blocking app threads waiting on disk."
+    difficulty: intermediate
+
+  - title: "Noisy Neighbour"
+    setup: "Occasional CPU spikes on a VM with no corresponding increase in application traffic. The spikes last 2-5 seconds. CPU steal time is 40% during spikes."
+    hint: "Another VM on the same hypervisor host is consuming CPU, causing high steal time. This is a cloud provider infrastructure issue."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows load average includes I/O-waiting processes, not just CPU-bound"
+      - "Can interpret vmstat 'b' column and 'wa' CPU stat"
+      - "Knows iostat await measures I/O latency not just throughput"
+      - "Mentions USE method or equivalent systematic approach"
+    red_flags:
+      - "Equates high load average directly with high CPU usage"
+      - "Cannot distinguish CPU-bound from I/O-bound problems"
+      - "Doesn't know what CPU steal time means"
+
+  reasoning:
+    strong_signals:
+      - "Uses structured methodology (USE method or equivalent)"
+      - "Checks multiple resources before concluding"
+    red_flags:
+      - "Immediately restarts service without analysis"
+      - "Only looks at CPU, ignores I/O and memory"
+
+  production_thinking:
+    strong_signals:
+      - "Uses non-invasive tools first (top, vmstat) before heavy profiling"
+      - "Considers historical data (sar) to find when degradation started"
+    red_flags:
+      - "Would run perf or strace on production without considering overhead"
+
+  communication:
+    strong_signals:
+      - "Structures investigation as: observe symptoms → identify bottlenecked resource → find root cause"
+    red_flags:
+      - "Cannot explain what a specific metric column means"
+
+follow_up_questions:
+  - trigger: "User mentions load average"
+    question: "Load average is 4 on a single-core machine. CPU shows 50% idle. What are the processes doing?"
+  - trigger: "User mentions iostat"
+    question: "iostat shows %util at 80% with await of 200ms. Is this a problem? What does it tell you?"
+
+references:
+  - title: "Brendan Gregg: Linux Performance Analysis in 60 Seconds"
+    url: "https://netflixtechblog.com/linux-performance-analysis-in-60-000-milliseconds-accc10403c55"
+  - title: "USE Method"
+    url: "https://www.brendangregg.com/usemethod.html"

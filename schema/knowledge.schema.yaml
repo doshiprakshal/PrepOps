@@ -1,0 +1,132 @@
+# PrepOps Knowledge File Schema
+# Every file under knowledge/**/*.yaml must conform to this schema.
+# Required fields are marked with [required].
+# Run `python docs/validate.py` (Phase 2) to validate locally.
+
+# ── Metadata ──────────────────────────────────────────────────────────────────
+topic: string                  # [required] snake_case identifier, e.g. "pods"
+display_name: string           # [required] Human-readable name, e.g. "Kubernetes Pods"
+domain: string                 # [required] Parent domain, e.g. "kubernetes"
+category: string               # [required] Top-level category from the domain hierarchy
+version: string                # [required] Semantic version, e.g. "1.0"
+contributors:                  # [required] List of GitHub usernames
+  - string
+
+# ── Prerequisites ─────────────────────────────────────────────────────────────
+# References to other knowledge files as "domain/topic" paths.
+# Used to suggest prerequisite study before this topic.
+prerequisites:
+  - string                     # e.g. "kubernetes/concepts"
+
+# ── Learning Objectives ───────────────────────────────────────────────────────
+# What the user should be able to do after studying this topic.
+# Write as "Understand / Explain / Configure / Debug" statements.
+learning_objectives:           # [required] minimum 3 entries
+  - string
+
+# ── Key Concepts ──────────────────────────────────────────────────────────────
+key_concepts:                  # [required] minimum 3 entries
+  - name: string               # [required] Concept name
+    summary: string            # [required] One-sentence summary
+    production_relevance: enum # [required] low | medium | high | critical
+
+# ── Common Misconceptions ─────────────────────────────────────────────────────
+# Incorrect beliefs that interviewers specifically test for.
+common_misconceptions:         # [required] minimum 2 entries
+  - string
+
+# ── Difficulty Levels ─────────────────────────────────────────────────────────
+# Defines the expected understanding at each seniority level.
+# Claude uses these rubrics to evaluate free-text responses.
+difficulty:                    # [required] must include at least beginner + intermediate + senior
+
+  beginner:
+    expected_understanding:    # [required] What a beginner should know
+      - string
+    key_concepts_to_mention:   # [required] Terms/concepts that should appear in a good answer
+      - string
+
+  intermediate:
+    expected_understanding:
+      - string
+    key_concepts_to_mention:
+      - string
+
+  senior:
+    expected_understanding:
+      - string
+    key_concepts_to_mention:
+      - string
+
+  staff:                       # optional
+    expected_understanding:
+      - string
+    key_concepts_to_mention:
+      - string
+
+  principal:                   # optional
+    expected_understanding:
+      - string
+    key_concepts_to_mention:
+      - string
+
+# ── Interview Angles ──────────────────────────────────────────────────────────
+# Specific question angles interviewers use for this topic.
+# Claude picks from these to drive each mode session.
+interview_angles:              # [required] minimum 3 entries
+  - angle: string              # [required] Label, e.g. "Debugging" | "Trade-offs" | "Design"
+    prompt: string             # [required] The actual question or scenario prompt
+
+# ── Debugging Commands ────────────────────────────────────────────────────────
+# CLI commands relevant to this topic that interviewers expect candidates to know.
+debugging_commands:            # [required for ops topics]
+  - command: string            # [required] The actual command with placeholder args
+    purpose: string            # [required] What this command reveals
+
+# ── Scenario Seeds ────────────────────────────────────────────────────────────
+# Production incident seeds for Scenario and Debugging Lab modes.
+# Claude uses these as starting points and improvises from there.
+scenario_seeds:                # [required] minimum 2 entries
+  - title: string              # [required] Short scenario name
+    setup: string              # [required] The observable symptoms, not the cause
+    hint: string               # The root cause (Claude reveals only after user investigates)
+    difficulty: enum           # beginner | intermediate | senior | staff | principal
+
+# ── Scoring Rubric ────────────────────────────────────────────────────────────
+# Claude uses these signals to evaluate responses, not fixed expected answers.
+scoring_rubric:                # [required]
+
+  technical_accuracy:
+    strong_signals:            # [required] Specific things a strong answer includes
+      - string
+    red_flags:                 # [required] Specific things that indicate a weak answer
+      - string
+
+  reasoning:
+    strong_signals:
+      - string
+    red_flags:
+      - string
+
+  production_thinking:
+    strong_signals:
+      - string
+    red_flags:
+      - string
+
+  communication:
+    strong_signals:
+      - string
+    red_flags:
+      - string
+
+# ── Follow-up Questions ───────────────────────────────────────────────────────
+# Dynamic follow-ups that Claude uses to probe deeper or adjust difficulty.
+follow_up_questions:           # [required] minimum 3 entries
+  - trigger: string            # [required] Condition that triggers this follow-up
+    question: string           # [required] The follow-up question
+
+# ── References ────────────────────────────────────────────────────────────────
+references:                    # optional but recommended
+  - title: string
+    url: string

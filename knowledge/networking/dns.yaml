@@ -1,0 +1,168 @@
+topic: dns
+display_name: "DNS"
+domain: networking
+category: "OS & Networking"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites: []
+
+learning_objectives:
+  - "Explain the DNS resolution chain from query to answer"
+  - "Identify all DNS record types and their use cases"
+  - "Debug DNS resolution failures using dig and nslookup"
+  - "Explain TTL and its impact on propagation and failover speed"
+  - "Design a DNS strategy for high availability and failover"
+
+key_concepts:
+  - name: "DNS Resolution Chain"
+    summary: "Client → Recursive Resolver → Root NS → TLD NS → Authoritative NS → Answer"
+    production_relevance: critical
+  - name: "Record Types"
+    summary: "A (IPv4), AAAA (IPv6), CNAME (alias), MX (mail), NS (name server), TXT (verification), SRV (service), PTR (reverse)"
+    production_relevance: critical
+  - name: "TTL (Time to Live)"
+    summary: "How long resolvers cache a record; short TTL enables fast failover but increases load on authoritative servers"
+    production_relevance: critical
+  - name: "Negative Caching"
+    summary: "NXDOMAIN responses are also cached for the TTL in the SOA record; affects how quickly new records propagate"
+    production_relevance: high
+  - name: "Split-Horizon DNS"
+    summary: "Different DNS responses for internal vs external clients; used for private services and security"
+    production_relevance: high
+
+common_misconceptions:
+  - "Changing a DNS record propagates instantly — it takes at least TTL seconds for resolvers to flush their cache"
+  - "CNAME can be used at the zone apex — CNAME at root (@) is invalid; use ALIAS or ANAME records instead"
+  - "DNS is stateless and always consistent — resolver caches create temporary inconsistency during TTL windows"
+  - "Lowering TTL before a migration takes effect immediately — you must wait for the old TTL to expire first"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "DNS translates domain names to IP addresses"
+      - "A record maps hostname to IPv4; CNAME creates an alias to another hostname"
+      - "TTL controls how long the record is cached by resolvers"
+      - "dig and nslookup for querying DNS records"
+    key_concepts_to_mention:
+      - "A record"
+      - "CNAME"
+      - "TTL"
+      - "dig"
+
+  intermediate:
+    expected_understanding:
+      - "The full DNS resolution chain: stub resolver → recursive resolver → authoritative"
+      - "Negative caching: NXDOMAIN is cached too, preventing new record visibility"
+      - "NS records delegate authority for a subdomain to a different name server"
+      - "SOA record: zone metadata including negative TTL"
+      - "DNS failover with health checks (Route 53)"
+    key_concepts_to_mention:
+      - "recursive vs authoritative resolver"
+      - "negative caching"
+      - "NS delegation"
+      - "Route 53 health check failover"
+
+  senior:
+    expected_understanding:
+      - "DNSSEC: chain of trust from root to zone; prevents cache poisoning"
+      - "Split-horizon / split-brain DNS for internal service discovery"
+      - "DNS load balancing: round-robin A records, weighted routing, latency routing"
+      - "Service discovery via DNS: SRV records, Consul, CoreDNS"
+      - "DNS amplification attacks and mitigation"
+    key_concepts_to_mention:
+      - "DNSSEC"
+      - "split-horizon DNS"
+      - "DNS-based service discovery"
+      - "anycast DNS"
+
+  staff:
+    expected_understanding:
+      - "Multi-region DNS strategy: active-active with latency routing vs active-passive with health check failover"
+      - "DNS as a single point of failure: resolver redundancy, anycast, EDNS client subnet"
+      - "DNS at Kubernetes scale: CoreDNS tuning, ndots, search domains overhead"
+    key_concepts_to_mention:
+      - "active-active DNS"
+      - "CoreDNS at scale"
+      - "resolver redundancy"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "You updated an A record 30 minutes ago but some users still see the old IP. Why, and what can you do?"
+  - angle: "Production scenario"
+    prompt: "Your website went down and you need to fail over to a backup datacenter in under 1 minute. You currently have a TTL of 3600. What is your plan?"
+  - angle: "Conceptual"
+    prompt: "Walk me through exactly what happens when a user types 'www.example.com' in their browser for the very first time."
+  - angle: "Trade-offs"
+    prompt: "What are the trade-offs of using very short TTLs (30s) vs very long TTLs (86400s)?"
+
+debugging_commands:
+  - command: "dig +trace example.com"
+    purpose: "Trace the full DNS resolution chain from root to authoritative answer"
+  - command: "dig @8.8.8.8 example.com A"
+    purpose: "Query a specific resolver (8.8.8.8) to bypass local cache"
+  - command: "dig example.com A +norecurse"
+    purpose: "Non-recursive query — ask the resolver what it knows without going upstream"
+  - command: "dig example.com SOA"
+    purpose: "Get the SOA record including negative TTL and serial number"
+  - command: "nslookup -debug example.com"
+    purpose: "Verbose DNS query with debug information including TTL and server used"
+
+scenario_seeds:
+  - title: "The Lingering Old IP"
+    setup: "The DNS A record was updated 2 hours ago from old IP to new IP. 80% of users reach the new server. 20% are still hitting the old server. The old server has been decommissioned."
+    hint: "The 20% still hitting the old server have cached the old TTL. Their resolver hasn't expired the cache yet. TTL was 86400 (24 hours). Had to pre-lower TTL before migration."
+    difficulty: intermediate
+
+  - title: "The Instant Failover Failure"
+    setup: "Primary datacenter went down at 14:00. Your DNS failover policy should route to secondary datacenter automatically. By 14:15, only 40% of traffic is on the secondary. TTL is 60 seconds."
+    hint: "Some resolvers ignore TTL and cache longer than specified. Plus Route 53 health check has a check interval + evaluation period. Total failover time can be 5-10 minutes even with 60s TTL."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Can explain the full DNS resolution chain including recursive vs authoritative"
+      - "Knows CNAME at zone apex is invalid"
+      - "Understands negative caching affects new record propagation"
+      - "Can explain why lowering TTL must happen before a migration, not during"
+    red_flags:
+      - "Thinks DNS changes propagate instantly"
+      - "Says CNAME can be used at the root domain"
+      - "Cannot explain the difference between recursive and authoritative resolvers"
+
+  reasoning:
+    strong_signals:
+      - "Uses dig +trace to diagnose resolution issues"
+      - "Asks about current TTL when debugging propagation issues"
+    red_flags:
+      - "Assumes all users see the same DNS response at the same time"
+
+  production_thinking:
+    strong_signals:
+      - "Pre-lowers TTL 24+ hours before a migration"
+      - "Designs health-check-based failover with realistic TTL expectations"
+      - "Considers resolver non-compliance with TTL when planning failover SLA"
+    red_flags:
+      - "Promises sub-minute DNS failover without acknowledging resolver cache lag"
+
+  communication:
+    strong_signals:
+      - "Can trace the DNS resolution path from client stub resolver to authoritative answer"
+    red_flags:
+      - "Vague about what happens between when a query is sent and when an answer arrives"
+
+follow_up_questions:
+  - trigger: "User mentions TTL"
+    question: "You're migrating a service in 48 hours. Current TTL is 86400. What do you need to do now and why?"
+  - trigger: "User mentions CNAME"
+    question: "You want to point the root domain (example.com) to an AWS ALB. You can't use a CNAME. What are your options?"
+  - trigger: "User mentions Route 53"
+    question: "Explain how Route 53 health check failover works. What is the realistic minimum time to failover?"
+
+references:
+  - title: "How DNS Works (CloudFlare)"
+    url: "https://www.cloudflare.com/learning/dns/what-is-dns/"
+  - title: "Route 53 Developer Guide"
+    url: "https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/"

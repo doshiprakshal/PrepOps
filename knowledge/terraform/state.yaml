@@ -1,0 +1,175 @@
+topic: state
+display_name: "Terraform State"
+domain: terraform
+category: "Infrastructure as Code"
+version: "1.0"
+contributors:
+  - doshiprakshal
+
+prerequisites: []
+
+learning_objectives:
+  - "Explain what Terraform state is and why it exists"
+  - "Configure remote state backends with locking"
+  - "Recover from state inconsistencies and lock failures"
+  - "Use terraform state commands safely"
+  - "Explain the risks of manual infrastructure changes when using Terraform"
+
+key_concepts:
+  - name: "State File"
+    summary: "JSON file mapping Terraform resources to real infrastructure; the source of truth for what Terraform manages"
+    production_relevance: critical
+  - name: "Remote Backend"
+    summary: "S3 + DynamoDB (AWS), GCS, or Terraform Cloud; enables team collaboration and state locking"
+    production_relevance: critical
+  - name: "State Locking"
+    summary: "Prevents concurrent Terraform runs from corrupting state; DynamoDB for S3 backend"
+    production_relevance: critical
+  - name: "terraform state Commands"
+    summary: "state list, state show, state mv, state rm — for inspecting and surgically modifying state"
+    production_relevance: high
+  - name: "Drift"
+    summary: "Difference between actual infrastructure and Terraform state; detected by terraform plan"
+    production_relevance: critical
+
+common_misconceptions:
+  - "terraform destroy deletes state — state is only deleted if you explicitly remove it; destroy removes the managed resources"
+  - "terraform refresh updates state automatically — it must be run explicitly; plan also detects drift"
+  - "Editing the state file directly is safe — state is JSON but Terraform has internal consistency checks; always use terraform state commands"
+  - "Multiple engineers can run terraform apply simultaneously without conflict — without locking, this corrupts state"
+
+difficulty:
+  beginner:
+    expected_understanding:
+      - "State file tracks what Terraform manages and maps it to real resources"
+      - "Remote state (S3, GCS) is required for teams to share state safely"
+      - "terraform plan reads state to determine what needs to change"
+      - "Never manually edit the state file"
+    key_concepts_to_mention:
+      - "state file"
+      - "remote backend"
+      - "terraform plan"
+
+  intermediate:
+    expected_understanding:
+      - "State locking prevents two engineers from running apply simultaneously"
+      - "S3 + DynamoDB is the most common AWS remote backend configuration"
+      - "terraform state list/show/mv/rm for safe state manipulation"
+      - "terraform import to bring existing resources under Terraform management"
+      - "State file contains sensitive data (secrets, passwords) — must be encrypted at rest"
+    key_concepts_to_mention:
+      - "DynamoDB locking"
+      - "terraform import"
+      - "terraform state mv"
+      - "state encryption"
+
+  senior:
+    expected_understanding:
+      - "State workspaces vs separate state files — workspaces share the same codebase, separate states are fully isolated"
+      - "terraform_remote_state data source for cross-team state sharing"
+      - "Partial backend configuration for security (not putting credentials in code)"
+      - "State file size and performance — why large states are slow and how to split them"
+      - "Recovering from a corrupt or lost state file"
+    key_concepts_to_mention:
+      - "workspaces vs separate states"
+      - "terraform_remote_state"
+      - "state file recovery"
+      - "backend partial configuration"
+
+  staff:
+    expected_understanding:
+      - "State architecture for a large organization: per-team, per-environment, per-component"
+      - "Atlantis or Terraform Cloud for GitOps-style plan/apply with state management"
+      - "State access control — who can read state? Who can apply? State contains secrets."
+      - "Migration strategy when splitting a monolithic state into component states"
+    key_concepts_to_mention:
+      - "state architecture at scale"
+      - "Atlantis / Terraform Cloud"
+      - "state access control"
+
+interview_angles:
+  - angle: "Debugging"
+    prompt: "terraform apply fails with 'Error acquiring the state lock'. What happened and how do you recover?"
+  - angle: "Production scenario"
+    prompt: "An engineer manually created a resource in AWS that Terraform was supposed to manage. terraform plan now shows it will be recreated. What do you do?"
+  - angle: "Design"
+    prompt: "You have 50 engineers, 3 environments, and 20 microservices all managed by Terraform. How do you design your state architecture?"
+  - angle: "Conceptual"
+    prompt: "What is in the Terraform state file? What sensitive information might it contain and how do you protect it?"
+
+debugging_commands:
+  - command: "terraform state list"
+    purpose: "List all resources tracked in the current state"
+  - command: "terraform state show <resource>"
+    purpose: "Show all attributes of a specific resource in state"
+  - command: "terraform state mv <source> <destination>"
+    purpose: "Move a resource within state (e.g. after module refactor) without destroying/recreating"
+  - command: "terraform state rm <resource>"
+    purpose: "Remove a resource from state without destroying it in the real infrastructure"
+  - command: "terraform import <resource_type.name> <real_id>"
+    purpose: "Import an existing real resource into Terraform state management"
+  - command: "terraform force-unlock <lock-id>"
+    purpose: "Force-release a stuck state lock — use with caution, verify no apply is running"
+
+scenario_seeds:
+  - title: "The Stuck Lock"
+    setup: "terraform apply fails immediately with: 'Error acquiring the state lock. ID: abc123-def456'. The previous apply ran 3 hours ago and should have completed."
+    hint: "Previous apply crashed or the engineer's connection dropped mid-apply. Lock is stuck in DynamoDB. Verify no apply is running (check CI logs), then force-unlock."
+    difficulty: intermediate
+
+  - title: "The State Orphan"
+    setup: "terraform plan shows it wants to create a security group that already exists in AWS. The security group has production traffic running through it."
+    hint: "The resource was created manually or by a previous Terraform setup with a different state. Use terraform import to bring it under current state management before anyone applies."
+    difficulty: intermediate
+
+  - title: "The Broken Module Refactor"
+    setup: "After refactoring Terraform code to use modules, terraform plan shows it will destroy and recreate 40 resources. The existing resources are in production."
+    hint: "Module refactoring changes resource addresses in state. Use terraform state mv to update addresses to new module paths before running plan."
+    difficulty: senior
+
+scoring_rubric:
+  technical_accuracy:
+    strong_signals:
+      - "Knows state locking mechanism (DynamoDB for S3 backend)"
+      - "Can explain terraform state mv and when it's needed"
+      - "Knows force-unlock risks and when it's safe to use"
+      - "Understands that state contains sensitive data and needs encryption"
+    red_flags:
+      - "Suggests directly editing the state JSON file"
+      - "Doesn't know how state locking works"
+      - "Confuses terraform refresh with terraform plan"
+
+  reasoning:
+    strong_signals:
+      - "Verifies no running apply exists before force-unlocking"
+      - "Uses terraform import instead of recreating existing resources"
+    red_flags:
+      - "Immediately force-unlocks without checking if an apply is in progress"
+
+  production_thinking:
+    strong_signals:
+      - "Considers blast radius before any state manipulation"
+      - "Uses terraform plan to preview state changes before applying"
+      - "Mentions state backup before risky operations"
+    red_flags:
+      - "Would run terraform apply to fix drift without understanding the impact"
+
+  communication:
+    strong_signals:
+      - "Can explain the state file's role in Terraform's operation model"
+    red_flags:
+      - "Vague about what state actually stores or why it exists"
+
+follow_up_questions:
+  - trigger: "User mentions workspaces"
+    question: "When would you use Terraform workspaces vs completely separate state files for dev/staging/prod environments? What are the trade-offs?"
+  - trigger: "User mentions terraform import"
+    question: "After importing a resource, what do you need to add to your Terraform code and what happens if you run plan before adding it?"
+  - trigger: "User mentions state lock"
+    question: "You run force-unlock while an apply was actually still running. What happens to the state?"
+
+references:
+  - title: "Terraform State Documentation"
+    url: "https://developer.hashicorp.com/terraform/language/state"
+  - title: "Backend Configuration"
+    url: "https://developer.hashicorp.com/terraform/language/settings/backends/configuration"

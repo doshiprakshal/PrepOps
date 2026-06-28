@@ -1,0 +1,10 @@
+{
+  "name": "prepops",
+  "description": "Adaptive AI interview coaching platform for Infrastructure, DevOps, SRE, Cloud, MLOps, and AIOps roles. Conducts interactive sessions across 10 learning modes — concept teaching, flashcards, MCQ, production scenarios, debugging labs, mock interviews, whiteboard, system design, rapid fire, and mixed mode. Adapts difficulty continuously based on your performance.",
+  "author": {
+    "name": "Prakshal Doshi",
+    "url": "https://github.com/doshiprakshal"
+  },
+  "category": "learning",
+  "homepage": "https://github.com/doshiprakshal/PrepOps"
+}
