@@ -1,0 +1,70 @@
+name: dimensions
+description: "Scoring dimensions for PrepOps session evaluation"
+
+dimensions:
+  technical_knowledge:
+    label: "Technical Knowledge"
+    weight: 0.25
+    description: "Accuracy and depth of technical understanding"
+    star_guide:
+      5: "Exceptional — volunteered advanced concepts unprompted; went beyond the question"
+      4: "Strong — covered all key points with minor gaps that didn't undermine the answer"
+      3: "Adequate — understood the basics; missed depth or nuance expected at this level"
+      2: "Developing — foundational gaps; needed significant prompting to reach key points"
+      1: "Significant gaps — major misconceptions or inability to engage with core concept"
+
+  production_thinking:
+    label: "Production Thinking"
+    weight: 0.25
+    description: "Applies concepts to real-world production scenarios; considers failure modes"
+    star_guide:
+      5: "Always considered failure modes, blast radius, and monitoring without prompting"
+      4: "Raised production concerns for most topics; missed one or two"
+      3: "Production thinking present when asked; not proactive about raising it"
+      2: "Rarely connected concepts to production reality; mostly theoretical"
+      1: "Purely theoretical — no production awareness shown at any point"
+
+  debugging_methodology:
+    label: "Debugging Methodology"
+    weight: 0.25
+    description: "Structured hypothesis-driven investigation; uses tools correctly"
+    star_guide:
+      5: "Systematic hypothesis formation; correct tools chosen; eliminated alternatives methodically"
+      4: "Generally systematic; occasional wrong turns that self-corrected"
+      3: "Knew the right tools but investigation wasn't structured"
+      2: "Guessed more than hypothesized; needed significant guidance to proceed"
+      1: "No clear methodology; random investigation or gave up without a plan"
+
+  communication:
+    label: "Communication"
+    weight: 0.15
+    description: "Clarity, structure, and precision in explaining technical concepts"
+    star_guide:
+      5: "Structured and precise; complex topics explained clearly without simplifying"
+      4: "Generally clear; occasional imprecision that didn't obscure meaning"
+      3: "Understandable but unstructured; key points were there but hard to follow"
+      2: "Difficult to follow; key points were buried or missing entirely"
+      1: "Unclear throughout; technical accuracy couldn't be assessed"
+
+  depth:
+    label: "Depth"
+    weight: 0.10
+    description: "Willingness and ability to go deeper than the surface answer"
+    star_guide:
+      5: "Went deeper than required at every opportunity; no surface-only answers"
+      4: "Good depth; didn't over-explain; knew when to go deeper"
+      3: "Surface-level on most topics; one or two moments of genuine depth"
+      2: "Mostly surface-level even when explicitly probed for more"
+      1: "Unable to go beyond the most basic level on any topic"
+
+scoring:
+  how_to_calculate: |
+    Weighted average across dimensions:
+    score = (TK * 0.25) + (PT * 0.25) + (DM * 0.25) + (C * 0.15) + (D * 0.10)
+    Map score to hire signal via hiring-signals.yaml thresholds.
+
+  evidence_rule: |
+    Every dimension score MUST include one specific quote or example from the session.
+    Never write "★★★★☆ Strong" without following it with a one-line evidence citation.
+    Example: "★★★★☆ Strong — correctly identified MTU as the source of size-dependent failures
+    before checking the MTU config, showing hypothesis-first debugging."

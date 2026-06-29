@@ -1,0 +1,131 @@
+id: cascading-retry-storm
+title: "Retry Storm from Misconfigured Timeout"
+domain: sre
+difficulty: senior
+topics: [sre, networking, kubernetes]
+
+context:
+  service: "checkout-service → payment-service"
+  impact: "Checkout failure rate 100% · payment-service CPU at 100%"
+  slo_status: "SLO breached · incident declared"
+  ticket_count: 203
+  observable_symptoms:
+    - "Checkout completely down"
+    - "payment-service CPU pinned at 100% despite no load increase"
+    - "payment-service logs show 10x normal request volume"
+    - "Upstream services healthy — just payment-service is overwhelmed"
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  SEV-1 INCIDENT  ·  16:47 UTC
+    Impact: Checkout is completely down
+    Service: payment-service CPU 100% · not serving requests
+    Symptom: 10x normal request volume hitting payment-service
+    Duration: 8 minutes
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Checkout is fully down. payment-service is at 100% CPU but there's been
+  no traffic increase from users. It's somehow getting 10x its normal volume.
+  All the services upstream of payment-service look healthy.
+  What's happening and how do you stop it?
+
+root_cause:
+  component: "checkout-service retry configuration (no backoff, too many retries)"
+  layer: application-config
+  explanation: |
+    A config change to checkout-service set the payment API timeout to 200ms
+    (down from 2000ms) and set retry count to 5 with no backoff.
+    payment-service occasionally takes 300ms during normal load spikes.
+    When payment-service takes >200ms, checkout-service immediately retries 5x.
+    Each retry also hits payment-service before the original request completes,
+    amplifying load by ~5x. This is enough to saturate payment-service CPU,
+    causing all requests to take >200ms, which triggers 5x retries on all of them.
+    Self-reinforcing loop. The fix is to roll back the timeout/retry config and
+    add circuit breaking.
+  fix: "Roll back checkout-service config to timeout=2000ms, retry=2, backoff=exponential"
+  prevention: "Circuit breaker on payment-service client; load test timeout/retry configs"
+  postmortem_hint: "Config change was not load tested — developer assumed 200ms was 'safe margin' without checking p99 latency"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [request volume, traffic, rps, payment logs, metrics]
+    response: |
+      # payment-service request rate (last 30 min):
+      16:30 UTC: 500 rps  (normal)
+      16:40 UTC: 520 rps  (normal)
+      16:47 UTC: 5200 rps (10x — incident starts)
+      16:50 UTC: 5400 rps (still spiking)
+
+      # Upstream user traffic:
+      16:47 UTC: 490 rps  (flat — user traffic unchanged)
+    reveals: "10x amplification in payment-service with no upstream traffic increase — someone is retrying aggressively"
+
+  - id: clue_2
+    trigger_keywords: [checkout, retry, timeout, config, upstream caller]
+    response: |
+      # checkout-service config (current — deployed 12 minutes ago):
+      payment_api:
+        timeout_ms: 200
+        max_retries: 5
+        retry_backoff: none
+        retry_on: [timeout, 5xx]
+
+      # Previous config:
+      payment_api:
+        timeout_ms: 2000
+        max_retries: 2
+        retry_backoff: exponential
+        retry_on: [5xx]
+    reveals: "Timeout cut from 2000ms to 200ms with 5 immediate retries — massive amplification potential if payment-service p99 exceeds 200ms"
+
+  - id: clue_3
+    trigger_keywords: [latency, payment p99, p99 latency, histogram, percentile]
+    response: |
+      # payment-service latency (before incident):
+      p50: 45ms
+      p95: 185ms
+      p99: 310ms  ← exceeds new 200ms timeout during normal load spikes
+
+      # During incident:
+      p50: 800ms  (CPU saturated — everyone slow now)
+      p99: 4200ms
+    reveals: "p99 latency already exceeded 200ms under normal load — guaranteed to trigger retries during any load spike"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [database, payment db, query, slow query]
+    response: |
+      $ payment-db slow query log (last 15 min)
+      Total slow queries: 0
+      DB CPU: 12%
+      Active connections: 45 / 500 max
+    note: "Database is healthy — payment-service slowdown is from CPU saturation caused by the retry storm, not DB issues"
+
+  - id: rh_2
+    trigger_keywords: [memory, oom, memory leak]
+    response: |
+      $ kubectl top pod -n payments
+      payment-service-7f9d-xkp2q   3980m CPU   / 4000m limit    (CPU: 99.5%)
+                                     512Mi MEM  / 2000Mi limit   (MEM: 25%)
+    note: "Memory is fine. This is pure CPU saturation — retry storm exhausting compute, not memory."
+
+turn_budget:
+  "3": |
+    [Slack · #incidents] @oncall CEO is watching. Checkout has been down 11 minutes.
+    What's the ETA? Do we need to roll something back?
+  "6": |
+    [Slack · #incidents] @oncall I was looking at the checkout-service deploy history —
+    there was a payment API timeout config change 12 minutes ago. Timing matches.
+  "9": |
+    [Slack · #incidents] @oncall The new timeout is 200ms. payment-service p99 is 310ms
+    under normal load. That would trigger retries on every p99 request...
+
+resolution_sequence:
+  - step: confirm
+    message: "Roll back checkout-service config → retry storm stops → payment-service CPU drops → checkout recovers within 60 seconds"
+  - step: remediate
+    message: "kubectl rollout undo deployment/checkout-service; verify payment-service CPU drops; verify checkout success rate recovers"
+  - step: prevent
+    message: "Add circuit breaker to payment client; load test retry configs against p99 latency; require latency profiling before timeout changes"
+  - step: postmortem
+    message: "Config change not load tested. Developer assumed 200ms was safe without checking p99. Add latency gate to config change review."

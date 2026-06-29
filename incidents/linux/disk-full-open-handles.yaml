@@ -1,0 +1,113 @@
+id: disk-full-open-handles
+title: "Disk Full But du Shows Space Available"
+domain: linux
+difficulty: senior
+topics: [linux, filesystems]
+
+context:
+  service: "log-aggregation-service"
+  impact: "Application throwing 'No space left on device' errors"
+  slo_status: "Service degraded — logs being dropped"
+  ticket_count: 8
+  observable_symptoms:
+    - "App throws 'No space left on device' error"
+    - "df -h shows / at 100%"
+    - "du -sh /* shows only 60% of disk used"
+    - "Deleting log files doesn't free space immediately"
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  09:14 UTC
+    Service: log-aggregation-service
+    Impact: 'No space left on device' errors · logs dropping
+    Host: log-aggregator-prod-01
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  The log aggregator is throwing 'No space left on device'.
+  df shows 100%, but du only accounts for about 60% of disk.
+  You deleted some old log files and it didn't help. Where do you start?
+
+root_cause:
+  component: "Deleted files held open by log-aggregation process"
+  layer: linux-filesystem
+  explanation: |
+    The log-aggregation process was writing to log files that were rotated
+    (deleted) by logrotate. But the process still has file descriptors open
+    to the old (deleted) log files. Linux doesn't free the disk blocks until
+    all file descriptors pointing to those inodes are closed.
+    df counts blocks allocated to all open files including deleted ones.
+    du only counts files visible in the directory tree.
+    The fix is to restart the process (releasing its file descriptors)
+    or send it a SIGHUP to reload its log file handles.
+  fix: "kill -HUP $(pgrep log-aggregator) OR restart the service"
+  prevention: "Configure logrotate postrotate script to send SIGHUP to the service"
+  postmortem_hint: "logrotate config had 'copytruncate' removed in last week's update, breaking the rotation signal"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [df, disk space, filesystem, usage]
+    response: |
+      $ df -h
+      Filesystem      Size  Used Avail Use% Mounted on
+      /dev/xvda1       50G   50G     0 100% /
+      tmpfs           7.8G     0  7.8G   0% /dev/shm
+    reveals: "Root filesystem is at 100% — disk is truly full"
+
+  - id: clue_2
+    trigger_keywords: [du, directory, where is space, find large files]
+    response: |
+      $ du -sh /*
+      4.0K    /bin
+      12G     /var
+      2.4G    /usr
+      ...
+      Total: ~30G accounted for
+
+      $ df -h /
+      /dev/xvda1  50G  50G  0  100% /
+    reveals: "du and df disagree — 20GB is missing from the directory accounting"
+
+  - id: clue_3
+    trigger_keywords: [lsof, open files, deleted, file descriptor, process]
+    response: |
+      $ lsof | grep deleted
+      log-aggr  1847  appuser  4w  REG  202,1  18745323520  /var/log/app/app.log.1 (deleted)
+      log-aggr  1847  appuser  5w  REG  202,1   4891234567  /var/log/app/app.log.2 (deleted)
+    reveals: "Process 1847 holds open file descriptors to 18GB of deleted log files — that's the missing space"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [inode, inode exhaustion, df -i]
+    response: |
+      $ df -i
+      Filesystem     Inodes  IUsed   IFree IUse% Mounted on
+      /dev/xvda1    3276800  85430 3191370    3% /
+    note: "Inodes are fine — only 3% used. Not an inode exhaustion problem."
+
+  - id: rh_2
+    trigger_keywords: [core dump, coredump, crash, crash dump]
+    response: |
+      $ find / -name "core.*" -size +1G 2>/dev/null
+      (no output)
+    note: "No core dumps. Not the issue."
+
+turn_budget:
+  "3": |
+    [Slack · #incidents] @oncall We're dropping about 40K log lines per minute.
+    Any update on when this will be resolved?
+  "6": |
+    [Slack · #incidents] @oncall I've seen this before where deleted files don't free space
+    right away. Something about open file handles?
+  "9": |
+    [Slack · #incidents] @oncall lsof shows the log-aggregator process has open handles
+    to deleted files. 18GB of them. That's gotta be it.
+
+resolution_sequence:
+  - step: confirm
+    message: "kill -HUP 1847 (or restart log-aggregator service) releases the file descriptors — space returns immediately"
+  - step: remediate
+    message: "SIGHUP or service restart frees 18GB instantly — verify with df -h"
+  - step: prevent
+    message: "Add 'postrotate: kill -HUP $(cat /run/log-aggregator.pid)' to logrotate config"
+  - step: postmortem
+    message: "Last week's logrotate config update removed the postrotate SIGHUP. Add this to config review checklist."

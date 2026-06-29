@@ -1,0 +1,70 @@
+name: hiring-signals
+description: "Hire signal definitions and threshold guidance for PrepOps sessions"
+
+signals:
+  STRONG_HIRE:
+    display: "STRONG HIRE ⬆"
+    threshold_stars: 4.5
+    description: "Exceptional depth and production thinking across all or almost all dimensions"
+    characteristics:
+      - "Volunteers advanced concepts before being asked"
+      - "Thinks about failure modes, blast radius, and monitoring without prompting"
+      - "Can explain trade-offs at multiple levels of abstraction"
+      - "Shows production instinct: asks about the customer impact first"
+      - "Corrects themselves when they realize they missed something"
+      - "Gives specific, numbered answers — not vague generalities"
+    typical_interview_signal: >
+      "I would go to bat for this candidate. They demonstrated mastery beyond the question
+      and showed they think like someone who's operated real systems in production."
+
+  LEAN_HIRE:
+    display: "LEAN HIRE ↑"
+    threshold_stars: 4.0
+    description: "Strong signal with one or two gaps that additional experience or coaching would close"
+    characteristics:
+      - "Solid on most dimensions"
+      - "Shows good instincts even where technical knowledge is incomplete"
+      - "Responds well to follow-up questions — improves their answer"
+      - "One clear area of weakness that doesn't undermine overall signal"
+    typical_interview_signal: >
+      "I'd advance this candidate. There's a gap in {area} but their core thinking
+      is strong and I believe they'd grow into it quickly."
+
+  BORDERLINE:
+    display: "BORDERLINE ↔"
+    threshold_stars: 3.0
+    description: "Mixed signal — strong in some areas, significant gaps in others"
+    characteristics:
+      - "Strong in one or two areas, weak in others"
+      - "Inconsistent quality — good answer then a surprising miss"
+      - "Needs to be probed significantly to get to the right answer"
+      - "Right answer occasionally but weak reasoning"
+    typical_interview_signal: >
+      "Borderline for me. Strong on {area} but {area} was a significant gap.
+      I'd want another round or a different interviewer to break the tie."
+
+  LEAN_NO_HIRE:
+    display: "LEAN NO HIRE ↓"
+    threshold_stars: 2.5
+    description: "Foundational gaps that would require significant ramp time"
+    characteristics:
+      - "Foundational concepts not solid"
+      - "Can't connect concepts to production reality"
+      - "Required significant prompting to reach correct answers"
+      - "Good answers were likely memorized, not understood (didn't hold up under follow-up)"
+    typical_interview_signal: >
+      "I'd pass. The gaps are in foundational areas that would make them
+      ineffective in this role from day one."
+
+  NO_HIRE:
+    display: "NO HIRE ⬇"
+    threshold_stars: 2.0
+    description: "Does not meet the minimum bar — major misconceptions or inability to engage"
+    characteristics:
+      - "Major misconceptions about core concepts"
+      - "Could not engage with follow-up probes even with prompting"
+      - "Pattern of guessing without forming hypotheses"
+      - "Could not demonstrate any production experience in the topic area"
+    typical_interview_signal: >
+      "Clear no hire. The fundamental understanding isn't there and I don't
+      think additional prompting would have changed the signal."

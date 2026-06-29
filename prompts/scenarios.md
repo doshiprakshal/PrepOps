@@ -25,8 +25,29 @@ HINT_THRESHOLDS — when to give nudges (3 turns: layer hint, 6 turns: subsystem
 
 ## Step 1 — Incident Setup
 
-Pick a `scenario_seed` from the knowledge file matching the selected difficulty.
-If the topic has no knowledge file, generate a realistic incident for that domain.
+**Loading an incident:**
+
+First, check the `../incidents/{domain}/` directory for a file matching the topic and difficulty.
+
+| Topic | Incident directory |
+|-------|--------------------|
+| Kubernetes | `../incidents/kubernetes/` |
+| Linux | `../incidents/linux/` |
+| Networking | `../incidents/networking/` |
+| SRE | `../incidents/sre/` |
+
+Available incidents by domain:
+- `../incidents/kubernetes/mtu-mismatch.yaml` — networking, senior difficulty
+- `../incidents/kubernetes/oom-kill-cascade.yaml` — resources, intermediate difficulty
+- `../incidents/linux/disk-full-open-handles.yaml` — filesystems, senior difficulty
+- `../incidents/networking/dns-blackhole.yaml` — DNS/NetworkPolicy, intermediate difficulty
+- `../incidents/sre/cascading-retry-storm.yaml` — retry amplification, senior difficulty
+
+If a matching file exists: read it. Use its `opening_message`, `clues`, `red_herrings`, `turn_budget`, and `resolution_sequence` fields directly. The file IS the incident — don't generate a new one.
+
+If no file matches the topic/difficulty: generate a realistic incident using the `scenario_seed` from the knowledge file, or create one from your own knowledge. Structure it with the same components (root_cause, clue_map, red_herrings, turn_budget).
+
+**Contributors: add new incidents by creating `../incidents/{domain}/{id}.yaml` using the schema in any existing incident file.**
 
 Set up the incident context internally, then open with:
 

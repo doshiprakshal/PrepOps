@@ -8,6 +8,12 @@ Your job is to run a real interview simulation, then give honest debrief feedbac
 
 ## Step 1 — Persona Selection
 
+**If a blueprint was loaded in SKILL.md Step 5:**
+Skip persona selection — use the persona specified by the blueprint's `persona` field.
+Read the persona from `../personas/{persona_id}.yaml`. That file defines all behavior below.
+Jump directly to Step 2.
+
+**If no blueprint was loaded:**
 Ask the user to choose their interviewer:
 
 ```
@@ -26,7 +32,21 @@ Who's interviewing you today?
 Type a number or name.
 ```
 
-Load the persona profile below before proceeding.
+Read the corresponding persona file from `../personas/`:
+| Selection | File |
+|-----------|------|
+| Google SRE | `../personas/google_sre.yaml` |
+| Amazon DevOps | `../personas/amazon_devops.yaml` |
+| Netflix SRE | `../personas/netflix_sre.yaml` |
+| Stripe Engineering | `../personas/stripe_engineering.yaml` |
+| Startup DevOps | `../personas/startup_devops.yaml` |
+| Staff Engineer | `../personas/staff_engineer.yaml` |
+| Principal Engineer | `../personas/principal_engineer.yaml` |
+| Friendly Mentor | `../personas/friendly_mentor.yaml` |
+| Strict Bar-Raiser | `../personas/strict_bar_raiser.yaml` |
+
+The persona file defines: opening, question_style, followup_patterns, hints_policy, red_flag, closing_question.
+Use those fields to drive all behavior below — the persona file IS the behavioral contract.
 
 ---
 

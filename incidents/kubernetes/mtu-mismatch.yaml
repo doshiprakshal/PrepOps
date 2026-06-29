@@ -1,0 +1,124 @@
+id: mtu-mismatch
+title: "MTU Mismatch on Node"
+domain: kubernetes
+difficulty: senior
+topics: [networking, kubernetes]
+
+context:
+  service: "image-upload-service"
+  impact: "~30% of image uploads failing — large files only"
+  slo_status: "Burning at 3x rate"
+  ticket_count: 47
+  observable_symptoms:
+    - "Small files (<100KB) upload successfully"
+    - "Files over ~1MB fail with connection reset"
+    - "CPU, memory, and pod restarts all look normal"
+    - "Started 12 minutes ago — no recent deployments"
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  14:32 UTC
+    Service: image-upload-service
+    Impact: ~30% of uploads failing · SLO burning at 3x rate
+    Tickets: 47 open · Duration: 12 minutes
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Users are reporting upload failures. Error logs show connection reset errors.
+  Small files succeed. Files over ~1MB fail consistently.
+  No deployments in the last 2 hours. Where do you start?
+
+root_cause:
+  component: "node-03 MTU misconfiguration"
+  layer: networking
+  explanation: |
+    node-03 was provisioned with MTU 1500 (default Ethernet).
+    The cluster overlay network (VXLAN) requires MTU 1450 to account for
+    the 50-byte encapsulation overhead. Packets larger than ~1400 bytes
+    after VXLAN encapsulation exceed the path MTU and are silently dropped.
+    Small payloads succeed. Large payloads (image uploads) fail with
+    connection reset because the packet is dropped mid-stream.
+  fix: "ip link set dev eth0 mtu 1450 on node-03; update node provisioning config"
+  prevention: "Add MTU validation step to node provisioning automation"
+  postmortem_hint: "Node was provisioned manually outside the standard runbook which enforces MTU=1450"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [ping, connectivity, reachable, node-03]
+    response: |
+      $ ping 10.0.0.3 -c 3
+      PING 10.0.0.3: 64 bytes, icmp_seq=0, time=0.3ms
+      PING 10.0.0.3: 64 bytes, icmp_seq=1, time=0.4ms
+      PING 10.0.0.3: 64 bytes, icmp_seq=2, time=0.3ms
+      --- 10.0.0.3 ping statistics ---
+      3 packets transmitted, 3 received, 0% packet loss
+    reveals: "Basic connectivity looks fine at first glance"
+
+  - id: clue_2
+    trigger_keywords: [large, payload, packet size, mtu, 1400, ping -s]
+    response: |
+      $ ping 10.0.0.3 -s 1400 -c 5
+      PING 10.0.0.3: 1408 bytes, icmp_seq=0, time=0.3ms
+      Request timeout for icmp_seq 1
+      Request timeout for icmp_seq 2
+      PING 10.0.0.3: 1408 bytes, icmp_seq=3, time=0.4ms
+      Request timeout for icmp_seq 4
+      --- 10.0.0.3 ping statistics ---
+      5 packets transmitted, 2 received, 60% packet loss
+    reveals: "Size-dependent packet loss — large packets are being dropped"
+
+  - id: clue_3
+    trigger_keywords: [ip link, mtu, interface, node mtu, network config]
+    response: |
+      # On node-01, node-02, node-04, node-05:
+      $ ip link show eth0
+      eth0: mtu 1450 qdisc mq state UP mode DEFAULT
+
+      # On node-03:
+      $ ip link show eth0
+      eth0: mtu 1500 qdisc mq state UP mode DEFAULT
+    reveals: "MTU mismatch — node-03 is set to 1500, all other nodes are 1450"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [pod restarts, crash, CrashLoopBackOff]
+    response: |
+      $ kubectl get pods -n upload -w
+      NAME                          READY   STATUS    RESTARTS   AGE
+      image-upload-7d9f8c-xkp2q    1/1     Running   0          3h
+      image-upload-7d9f8c-m4n7r    1/1     Running   0          3h
+      logging-agent-ds-vxq9k       1/1     Running   1          4h
+    note: "The logging-agent restart was 4 hours ago from log rotation — unrelated to incident"
+
+  - id: rh_2
+    trigger_keywords: [cpu, node-02, resource, load]
+    response: |
+      $ kubectl top node
+      NAME       CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+      node-01    450m         11%    2Gi             26%
+      node-02    3200m        80%    4Gi             52%
+      node-03    420m         10%    1.8Gi           23%
+    note: "node-02 CPU spike is a scheduled batch indexing job — unrelated to upload failures"
+
+turn_budget:
+  "3": |
+    [Slack · #incidents] @oncall The upload SLO burn rate just hit 4x. Legal is asking about
+    compliance for failed uploads. How are we progressing?
+  "6": |
+    [Slack · #incidents] @oncall Junior SRE here — I was checking node health and noticed
+    node-03 was provisioned last week. Not sure if relevant but thought I'd mention it.
+  "9": |
+    [Slack · #incidents] @oncall I checked the node networking on node-03 and something
+    looks off with the network interface config. Can you look at that?
+  "12": |
+    [Slack · #incidents] @oncall Found it — node-03 has MTU 1500, everything else is 1450.
+    We think that's it. Can you confirm and apply the fix?
+
+resolution_sequence:
+  - step: confirm
+    message: "Yes — set MTU to 1450 on node-03 and the large file failures stop immediately"
+  - step: remediate
+    message: "Apply MTU fix → restart affected pods → verify endpoint health → drain if needed"
+  - step: prevent
+    message: "Add MTU validation to node provisioning; add a node-health check to CI"
+  - step: postmortem
+    message: "Node provisioned manually outside the standard runbook. Runbook not enforced in automation."

@@ -1,0 +1,130 @@
+id: dns-blackhole
+title: "DNS Blackhole After Network Policy Change"
+domain: networking
+difficulty: intermediate
+topics: [kubernetes, networking, dns]
+
+context:
+  service: "all services in affected namespace"
+  impact: "New pods can't reach any services — existing pods unaffected"
+  slo_status: "New deployments broken — can't scale out"
+  ticket_count: 6
+  observable_symptoms:
+    - "Newly deployed pods can't resolve any DNS names"
+    - "curl from new pod: 'Could not resolve host'"
+    - "Existing pods that were running before the change work fine"
+    - "Change deployed 45 minutes ago: 'tighten namespace network policies'"
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  Ongoing (45 min)
+    Impact: New pods in 'payments' namespace can't resolve DNS
+    Scope: Newly scheduled pods only — existing pods unaffected
+    Change: Network policy tightening deployed 45 min ago
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  After a network policy tightening change, newly scheduled pods in the
+  'payments' namespace can't resolve any DNS names. Existing pods work fine.
+  Can't scale out any deployments — they come up but can't connect to anything.
+  Where do you start?
+
+root_cause:
+  component: "NetworkPolicy blocking DNS egress to kube-dns"
+  layer: kubernetes-networking
+  explanation: |
+    The new default-deny egress NetworkPolicy blocks all outbound traffic from
+    pods in the 'payments' namespace, including DNS queries to kube-dns on
+    UDP port 53. Existing pods had already cached DNS responses and continue
+    working until their TTL expires. New pods start with no DNS cache and
+    immediately fail to resolve. The fix is to add an explicit egress rule
+    allowing UDP 53 to the kube-system namespace (where CoreDNS runs).
+  fix: |
+    Add NetworkPolicy egress rule:
+    - Egress to namespace kube-system, port 53/UDP and 53/TCP
+  prevention: "NetworkPolicy changes must include a DNS connectivity test in staging"
+  postmortem_hint: "Staging didn't catch this because staging pods also had warm DNS caches"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [nslookup, dig, dns, resolve, curl, test connectivity]
+    response: |
+      $ kubectl exec -it new-pod-7f9d4-xkp2q -n payments -- nslookup kubernetes.default
+      Server:    10.96.0.10
+      Address 1: 10.96.0.10
+
+      nslookup: can't resolve 'kubernetes.default': No answer
+
+      $ kubectl exec -it old-pod-7f9d4-abc12 -n payments -- nslookup kubernetes.default
+      Server:    10.96.0.10
+      Address 1: 10.96.0.10
+      Name:      kubernetes.default
+      Address 1: 10.96.0.1
+    reveals: "DNS is broken for new pods but works for existing pods — points to something stateful like a cache or a policy affecting new connections"
+
+  - id: clue_2
+    trigger_keywords: [network policy, networkpolicy, policy, egress, ingress]
+    response: |
+      $ kubectl get networkpolicy -n payments
+      NAME           POD-SELECTOR   AGE
+      allow-ingress  app=payments   2d
+      deny-all-egress <all>         45m
+
+      $ kubectl describe networkpolicy deny-all-egress -n payments
+      Spec:
+        PodSelector: <all pods>
+        PolicyTypes: Egress
+        Egress: <none>
+    reveals: "A default-deny egress policy was applied 45 minutes ago — blocks ALL outbound traffic including DNS"
+
+  - id: clue_3
+    trigger_keywords: [coredns, kube-dns, corefile, dns pod, port 53]
+    response: |
+      $ kubectl get pods -n kube-system | grep coredns
+      coredns-5d78c9869d-7kplx   1/1   Running   0   12d
+      coredns-5d78c9869d-v9n2k   1/1   Running   0   12d
+
+      $ kubectl exec -it new-pod -n payments -- nc -vzu 10.96.0.10 53
+      nc: connect to 10.96.0.10 port 53 (udp) failed: Connection refused
+    reveals: "New pods can't reach port 53 on the DNS server — egress to DNS is blocked"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [coredns logs, dns logs, dns errors]
+    response: |
+      $ kubectl logs coredns-5d78c9869d-7kplx -n kube-system | tail -20
+      [INFO] plugin/ready: CoreDNS is ready
+      [INFO] 10.0.0.1:52341 - 60 "A IN payments-service.payments.svc.cluster.local."
+      [INFO] 10.0.0.2:49201 - 60 "A IN kubernetes.default.svc.cluster.local."
+    note: "CoreDNS itself is healthy and serving requests from other namespaces — the problem is packets from payments pods never arriving at CoreDNS"
+
+turn_budget:
+  "3": |
+    [Slack · #incidents] @oncall Payments team is trying to roll out an emergency fix
+    and can't because all new pods are broken. Is this fixable in the next 10 minutes?
+  "6": |
+    [Slack · #incidents] @oncall Looking at the change deployed 45 min ago — it's a
+    default-deny egress policy. Is DNS traffic covered by that?
+  "9": |
+    [Slack · #incidents] @oncall I think we're blocking DNS. The deny-all-egress policy
+    doesn't have an exception for port 53 to kube-system.
+
+resolution_sequence:
+  - step: confirm
+    message: "Add egress rule allowing port 53 UDP/TCP to kube-system — new pods resolve DNS immediately"
+  - step: remediate
+    message: |
+      Apply NetworkPolicy patch adding:
+      egress:
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+  - step: prevent
+    message: "Add DNS connectivity test to network policy change CI gate; test in staging with fresh pods (no cache)"
+  - step: postmortem
+    message: "Staging test used pre-existing pods with warm DNS cache — didn't expose the regression. Add fresh-pod DNS test to staging gate."

@@ -1,0 +1,120 @@
+id: oom-kill-cascade
+title: "OOM Kill Cascade on High-Traffic Pod"
+domain: kubernetes
+difficulty: intermediate
+topics: [kubernetes, linux]
+
+context:
+  service: "recommendation-engine"
+  impact: "Intermittent 500s — about 1 in 8 requests"
+  slo_status: "Error budget at 15% remaining for the month"
+  ticket_count: 12
+  observable_symptoms:
+    - "Pods showing RESTARTS counter increasing throughout the day"
+    - "Errors correlate with traffic spikes"
+    - "Recommendation latency spikes before pod dies"
+    - "Errors started 2 days ago after config change"
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  Ongoing (2 days)
+    Service: recommendation-engine
+    Impact: Intermittent 500s · ~1 in 8 requests failing
+    Error Budget: 15% remaining this month
+    Symptom: Pods restarting every few hours during peak traffic
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  The recommendation-engine has been intermittently throwing 500s for 2 days.
+  You can see the restart counter going up. Errors correlate with traffic spikes.
+  A config change was deployed 2 days ago. Where do you start?
+
+root_cause:
+  component: "Pod memory limit too low for actual workload"
+  layer: kubernetes
+  explanation: |
+    The config change 2 days ago enabled a new ML model feature that doubled
+    the in-memory cache size. The memory limit in the Deployment spec was not
+    updated. During traffic spikes, the pod exceeds its memory limit and is
+    OOM killed by the kubelet. The restart resets the cache, which gets rebuilt
+    on next traffic, which OOM kills it again — a cycle.
+  fix: "Increase memory limit from 512Mi to 1.5Gi in the Deployment spec"
+  prevention: "Test memory behavior of config changes under load before promoting to prod"
+  postmortem_hint: "Config changes should include a review of resource limits"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [pod restarts, describe pod, events, kubectl describe]
+    response: |
+      $ kubectl describe pod recommendation-engine-7f9d4-xkp2q
+      ...
+      Last State: Terminated
+        Reason: OOMKilled
+        Exit Code: 137
+        Started: Mon, 29 Jun 2026 11:42:00 +0000
+        Finished: Mon, 29 Jun 2026 11:44:32 +0000
+      ...
+      Limits:
+        memory: 512Mi
+      Requests:
+        memory: 256Mi
+    reveals: "OOMKilled — pod is being killed for exceeding its memory limit"
+
+  - id: clue_2
+    trigger_keywords: [memory, usage, metrics, top pod, resource]
+    response: |
+      $ kubectl top pod -n recommendations
+      NAME                                    CPU(cores)   MEMORY(bytes)
+      recommendation-engine-7f9d4-xkp2q      450m         489Mi
+      recommendation-engine-7f9d4-m4n7r      480m         498Mi
+      recommendation-engine-7f9d4-vxq9k      420m         501Mi
+    reveals: "All three pods sitting at ~490-500Mi — right at the 512Mi limit, no headroom"
+
+  - id: clue_3
+    trigger_keywords: [config change, what changed, git, deployment history, changelog]
+    response: |
+      $ kubectl rollout history deployment/recommendation-engine
+      REVISION  CHANGE-CAUSE
+      14        Enable enhanced ML model cache (feature flag: enable_v2_cache=true)
+      13        Upgrade base image to python:3.11
+      12        Scale replicas from 2 to 3
+
+      # Revision 14 was deployed 2 days ago
+    reveals: "Revision 14 enabled a new ML model cache — likely explains the memory increase"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [cpu, throttle, limit, cpu limit]
+    response: |
+      $ kubectl top pod -n recommendations
+      NAME                                    CPU(cores)   MEMORY(bytes)
+      recommendation-engine-7f9d4-xkp2q      450m         489Mi
+    note: "CPU is 450m out of 1000m limit — plenty of headroom. CPU is not the problem."
+
+  - id: rh_2
+    trigger_keywords: [network, latency, upstream, downstream service]
+    response: |
+      $ kubectl exec -it recommendation-engine-7f9d4-xkp2q -- curl -w "%{time_total}" http://model-store/health
+      {"status":"ok"}
+      0.003
+    note: "Upstream model-store is healthy and fast. Not a dependency issue."
+
+turn_budget:
+  "3": |
+    [Slack · #incidents] @oncall Product is asking if we need to roll back the new cache feature.
+    Should we? What's the call?
+  "6": |
+    [Slack · #incidents] @oncall I just noticed the pods look like they're using a lot of memory
+    right before they die. Might be worth checking the memory limits.
+  "9": |
+    [Slack · #incidents] @oncall The restarts all show OOMKilled in the events. I think the memory
+    limit is too low for the new cache.
+
+resolution_sequence:
+  - step: confirm
+    message: "Raise memory limit to 1.5Gi — pods stop OOM killing, errors drop to zero"
+  - step: remediate
+    message: "kubectl set resources deployment/recommendation-engine --limits=memory=1.5Gi"
+  - step: prevent
+    message: "Add memory profiling gate to CI for config changes; right-size limits with 30% headroom"
+  - step: postmortem
+    message: "Config change review did not include resource limit assessment. Add to checklist."

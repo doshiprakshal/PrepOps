@@ -121,26 +121,82 @@ How would you like to learn?
   10. Mixed Mode           — I pick the best mix based on your weak areas
 ```
 
-### Step 5 — Load Mode Prompt
+### Step 5 — Blueprint Selection (optional, before mode)
 
-Read the mode-specific prompt file from the `prompts/` directory adjacent to this SKILL.md:
+If the user chose **Mock Interview** or **Production Scenarios**, or if they mentioned a target company/role, offer blueprint selection:
+
+```
+Are you preparing for a specific company and role?
+
+Type a company and level (e.g. "Google SRE IC4", "Amazon L5", "Netflix Staff")
+or press Enter to skip.
+```
+
+If they provide a target:
+1. Find the matching blueprint at `../../blueprints/{company}/{role}/{level}.yaml`
+2. Read it — it drives Steps 3, 6, and the report
+3. Set `difficulty` from `expected_depth` values in the blueprint
+4. In Step 6, use the blueprint's `topic_weights` to select questions and `persona` field to load the interviewer
+5. In Step 7, calibrate the hire signal against the blueprint's `hiring_bar`, not the generic rubric
+
+**Blueprint → Persona → Incident: how they combine**
+
+```
+Blueprint (company/role/level)
+  ↓ topic_weights  → determines which topics to ask about and in what proportion
+  ↓ expected_depth → determines how deep to go per topic
+  ↓ persona        → loads ../../personas/{persona_id}.yaml for interviewer behavior
+  ↓ hiring_bar     → calibrates the end-of-session verdict
+  ↓ common_mistakes → shapes what gaps to watch for during the session
+
+Persona (interviewer profile)
+  ↓ question_style  → shapes HOW questions are asked
+  ↓ followup_patterns → the actual follow-up templates to use
+  ↓ hints_policy    → whether and how to give hints
+
+Incidents (production scenarios)
+  ↓ for Production Scenarios mode, load from ../../incidents/{domain}/{id}.yaml
+  ↓ pick incident matching topic + difficulty level
+  ↓ use clues, red_herrings, and turn_budget from the incident file
+
+Knowledge (topic content)
+  ↓ read from ../../knowledge/{domain}/{topic}.yaml
+  ↓ provides key_concepts, common_misconceptions, scenario_seeds, scoring_rubric
+```
+
+Without a blueprint: use generic difficulty/persona as set in Steps 3-4.
+With a blueprint: the blueprint overrides topic balance, depth, and report calibration.
+
+### Step 6 — Load Mode Prompt
+
+All mode prompt files are at the repository root `../../prompts/` relative to this SKILL.md:
 
 | Mode | File |
 |------|------|
-| Learn Concept | `./prompts/learn_concept.md` |
-| Flashcards | `./prompts/flashcards.md` |
-| MCQ Practice | `./prompts/mcq.md` |
-| Production Scenarios | `./prompts/scenarios.md` |
-| Debugging Labs | `./prompts/debugging_labs.md` |
-| Mock Interview | `./prompts/mock_interview.md` |
-| Whiteboard Interview | `./prompts/whiteboard.md` |
-| System Design | `./prompts/system_design.md` |
-| Rapid Fire | `./prompts/rapid_fire.md` |
-| Mixed Mode | `./prompts/mixed_mode.md` |
+| Learn Concept | `../../prompts/learn_concept.md` |
+| Flashcards | `../../prompts/flashcards.md` |
+| MCQ Practice | `../../prompts/mcq.md` |
+| Production Scenarios | `../../prompts/scenarios.md` |
+| Debugging Labs | `../../prompts/debugging_labs.md` |
+| Mock Interview | `../../prompts/mock_interview.md` |
+| Whiteboard Interview | `../../prompts/whiteboard.md` |
+| System Design | `../../prompts/system_design.md` |
+| Rapid Fire | `../../prompts/rapid_fire.md` |
+| Mixed Mode | `../../prompts/mixed_mode.md` |
 
 Read the appropriate file and follow its instructions for the rest of the session.
 
-### Step 6 — Conduct Session
+**Additional resource paths (all relative to repository root, not this SKILL.md):**
+
+| Resource | Path | Use when |
+|----------|------|----------|
+| Interviewer personas | `personas/{id}.yaml` | Mock Interview mode |
+| Production incidents | `incidents/{domain}/{id}.yaml` | Production Scenarios mode |
+| Scoring rubrics | `rubrics/dimensions.yaml`, `rubrics/hiring-signals.yaml` | End-of-session report |
+| Company blueprints | `blueprints/{company}/{role}/{level}.yaml` | Blueprint-driven sessions |
+| Topic knowledge | `knowledge/{domain}/{topic}.yaml` | All modes |
+
+### Step 7 — Conduct Session
 
 Follow the mode prompt instructions with the knowledge context loaded.
 
@@ -154,7 +210,7 @@ Track in session state (internal, never shown to user):
 - `consecutive_wrong` — resets on correct answer
 - `hint_budget_used` — how many hints given (incident mode only)
 
-### Step 7 — End-of-Session Report
+### Step 8 — End-of-Session Report
 
 When the user types "end", "done", "quit", "report", "summary", or after the mode naturally
 concludes, generate the interview report below. This is the document they will screenshot.
