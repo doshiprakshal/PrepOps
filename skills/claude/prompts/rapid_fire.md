@@ -1,62 +1,80 @@
 # Mode: Rapid Fire
 
-15 quick questions, increasing difficulty. Short answers expected.
-This simulates the "breadth check" portion of an interview.
+15 questions, increasing difficulty. Short answers. Fast feedback.
+This simulates the breadth-check portion of a real interview.
 
-## Rules
+---
 
-Tell the user:
+## Opening
+
 ```
-RAPID FIRE — {topic}
+RAPID FIRE  ·  {topic}  ·  {difficulty} level
 
-15 questions. Short answers — 1-3 sentences max per question.
-I'll tell you if you're right or wrong immediately.
-Difficulty increases as we go.
-Ready? Here's question 1.
+15 questions. 1-3 sentence answers max per question.
+I'll tell you right or wrong immediately with a brief explanation.
+Difficulty increases as we go. Ready?
 ```
 
-## Question Format
+---
 
-Ask one question at a time. After answer:
-- ✓ or ✗ or ~ with one-line explanation
-- Immediately ask the next question
+## Question Rules
+
+**Each question is one of these types:**
+- "In one sentence: why does X exist?"
+- "True or False: {statement}. Why?"
+- "You see {symptom}. What's the most likely cause?"
+- "What's the difference between X and Y?"
+- "What command would you run to {action}? What does the output tell you?"
+- "What's wrong with this: {short snippet or config}"
+
+**Never ask:**
+- Multi-part questions in rapid fire
+- Questions that require a paragraph to answer correctly
+
+---
+
+## Difficulty Progression
+
+Questions 1-5: Beginner level — core concepts, what things are
+Questions 6-10: Intermediate level — how they work, common failure modes
+Questions 11-13: Senior level — edge cases, production scenarios
+Questions 14-15: Curveball — one level above selected difficulty, or cross-topic
+
+---
+
+## Feedback Per Question
+
+**Correct:** "✓ {one sentence adding something they may not have mentioned}"
+
+**Partial:** "~ {what they got right} / {the part they missed in one sentence}"
+
+**Wrong:** "✗ {correct answer in one sentence} — {why their answer was wrong in one sentence}"
 
 No long teaching segments during rapid fire.
-Save detailed teaching for after question 15.
+If a topic generates 2+ wrong answers: flag it as a weak area for the final report.
+Teach it properly AFTER question 15, not during.
 
-## Question Progression
-
-Questions 1-5: Beginner level
-Questions 6-10: Intermediate level
-Questions 11-13: Senior level
-Questions 14-15: Staff/Principal level (or a curveball)
-
-## Question Types for Rapid Fire
-
-- "In one sentence: what is {concept}?"
-- "True or false: {statement}. Why?"
-- "Name 3 {things}."
-- "What command would you run to {action}?"
-- "What's the difference between {X} and {Y}?"
-- "What happens when {thing} fails?"
-- "What's wrong with this: {short snippet}?"
+---
 
 ## After Question 15
 
-Give a rapid-fire scorecard:
+**Rapid fire scorecard:**
+
 ```
-RAPID FIRE RESULTS — {topic}
+RAPID FIRE RESULTS  ·  {topic}
 
 Score: {n}/15
 
-  Q1  ✓   Q6  ✓   Q11 ~
-  Q2  ✓   Q7  ✗   Q12 ✗
-  Q3  ~   Q8  ✓   Q13 ✓
-  Q4  ✓   Q9  ✓   Q14 ✗
-  Q5  ✓   Q10 ~   Q15 ~
+  Q1  {✓/~/✗}    Q6  {✓/~/✗}    Q11 {✓/~/✗}
+  Q2  {✓/~/✗}    Q7  {✓/~/✗}    Q12 {✓/~/✗}
+  Q3  {✓/~/✗}    Q8  {✓/~/✗}    Q13 {✓/~/✗}
+  Q4  {✓/~/✗}    Q9  {✓/~/✗}    Q14 {✓/~/✗}
+  Q5  {✓/~/✗}    Q10 {✓/~/✗}    Q15 {✓/~/✗}
 
-Strongest: {question numbers}
-Review:    {question numbers with brief explanation of correct answer}
+Strongest:  Q{n}, Q{n}, Q{n}
+Review:     Q{n} — {brief correct answer for each missed question}
 ```
 
-Then ask: "Want me to drill deeper into any of the topics you missed?"
+Then: "Want to drill into any of the topics you missed?"
+If yes: switch to Learn Concept or Debugging Labs for those specific topics.
+If no: generate the end-of-session report from SKILL.md.
