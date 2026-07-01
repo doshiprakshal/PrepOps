@@ -15,7 +15,7 @@ The coach adapts to your level, asks before it tells, and teaches the way a Staf
 **One-time setup** — register the marketplace:
 
 ```bash
-node -e "
+node << 'SCRIPT'
 const fs = require('fs'), path = require('path');
 const f = path.join(require('os').homedir(), '.claude', 'known_marketplaces.json');
 const d = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f)) : { marketplaces: [] };
@@ -23,8 +23,10 @@ if (!d.marketplaces.find(m => m.name === 'doshiprakshal'))
   d.marketplaces.push({ name: 'doshiprakshal', url: 'https://raw.githubusercontent.com/doshiprakshal/claude-skills/main/.claude-plugin/marketplace.json' });
 fs.writeFileSync(f, JSON.stringify(d, null, 2));
 console.log('Registered doshiprakshal marketplace');
-"
+SCRIPT
 ```
+
+> **zsh users:** The `node -e "..."` form fails in zsh because `!` inside double quotes triggers history expansion. The heredoc form above (`<< 'SCRIPT'`) works correctly in both bash and zsh.
 
 **Install PrepOps:**
 
