@@ -191,10 +191,18 @@ Read the appropriate file and follow its instructions for the rest of the sessio
 | Resource | Path | Use when |
 |----------|------|----------|
 | Interviewer personas | `personas/{id}.yaml` | Mock Interview mode |
-| Production incidents | `incidents/{domain}/{id}.yaml` | Production Scenarios mode |
+| Production incidents | `incidents/{domain}/{id}.yaml` | Production Scenarios mode (specific) |
+| Incident templates | `incident-templates/{type}.yaml` | Production Scenarios mode (generated) |
 | Scoring rubrics | `rubrics/dimensions.yaml`, `rubrics/hiring-signals.yaml` | End-of-session report |
 | Company blueprints | `blueprints/{company}/{role}/{level}.yaml` | Blueprint-driven sessions |
 | Topic knowledge | `knowledge/{domain}/{topic}.yaml` | All modes |
+
+**Incident selection for Production Scenarios mode:**
+1. Check `incidents/{domain}/` for a specific file matching the topic. If found, use it directly.
+2. If no matching handcrafted file: load `incident-templates/{type}.yaml` where type matches the symptom class.
+   Available templates: `network-latency`, `pod-not-starting`, `high-cpu-or-memory`, `service-returning-errors`
+3. Follow the template's `generation_instructions` to select a root cause, build the clue set, pick red herrings, and fill the opening.
+4. If no template matches: generate an incident from scratch using the knowledge file's `scenario_seeds`.
 
 ### Step 7 — Conduct Session
 

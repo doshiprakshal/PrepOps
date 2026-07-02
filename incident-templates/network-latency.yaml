@@ -1,0 +1,379 @@
+template_id: network-latency
+display_name: "Network Latency"
+domain: networking
+description: >
+  Service-to-service latency is elevated. Root cause is somewhere in
+  the network layer. Claude picks one root cause, samples matching
+  clues, and injects the red herrings to generate a unique incident.
+
+# ─── Root Causes ─────────────────────────────────────────────────
+# Claude selects exactly one when generating a scenario.
+# Difficulty and detection_path inform the generation prompt.
+
+root_causes:
+  - id: mtu_mismatch
+    display: "MTU Mismatch"
+    difficulty: senior
+    explanation: >
+      One node or interface has a different MTU than the rest of the
+      network (e.g. overlay default 1450 vs interface default 1500).
+      Packets that don't require fragmentation pass fine; large packets
+      (TCP handshake, big payloads) are silently dropped or fragmented,
+      causing retransmissions and high latency.
+    detection_path:
+      - "Small pings pass; large-payload ping (ping -M do -s 1472) fails"
+      - "ip link show reveals MTU mismatch on one interface/node"
+      - "tcpdump shows ICMP 'frag needed' messages"
+    fix: "Align MTU across all nodes/interfaces to 1450 (or the correct overlay value)"
+    postmortem_hint: "New node added without matching the cluster MTU standard"
+
+  - id: dns_resolution_slow
+    display: "Slow DNS Resolution"
+    difficulty: intermediate
+    explanation: >
+      DNS lookups are timing out or taking 300-800ms due to ndots:5
+      search-path exhaustion, CoreDNS pod resource pressure, or a
+      misconfigured upstream resolver. Services appear slow because
+      every request starts with 3-5 DNS lookups before the actual call.
+    detection_path:
+      - "dig / nslookup shows 300-800ms query times"
+      - "kubectl top pod -n kube-system shows CoreDNS at CPU limit"
+      - "Latency disappears for requests hitting warm connection pools"
+    fix: "Increase CoreDNS resources OR pin FQDN with trailing dot OR reduce ndots"
+    postmortem_hint: "CoreDNS resource limits not revisited after cluster grew 3x"
+
+  - id: firewall_acl_throttling
+    display: "Firewall / ACL Throttling"
+    difficulty: intermediate
+    explanation: >
+      A security group rule, iptables rule, or network ACL is rate-limiting
+      or dropping packets above a threshold. The rule was added recently
+      and matched a traffic class that includes legitimate service traffic.
+    detection_path:
+      - "Packet loss visible with mtr — drops at a specific hop"
+      - "iptables -L -n -v shows DROP rule with rising packet counter"
+      - "Traffic from specific source IP or port ranges is affected"
+    fix: "Identify and update the offending ACL/iptables rule"
+    postmortem_hint: "Security rule deployed with too-broad matching pattern"
+
+  - id: tcp_retransmissions
+    display: "TCP Retransmission Storm"
+    difficulty: senior
+    explanation: >
+      Packet loss somewhere in the path causes TCP to retransmit.
+      Retransmit backoff multiplies the latency: a single 1% loss can
+      add 100-500ms to p99 latency depending on RTO settings.
+    detection_path:
+      - "ss -s shows high retrans count"
+      - "netstat -s | grep retransmit shows rising counter"
+      - "tcpdump shows TCP [R] and duplicate ACK storms"
+    fix: "Identify the lossy hop with mtr; fix underlying link or route"
+    postmortem_hint: "Physical link degradation not detected by monitoring"
+
+  - id: load_balancer_misconfiguration
+    display: "Load Balancer Misconfiguration"
+    difficulty: intermediate
+    explanation: >
+      Health check interval too long or sticky session misconfiguration
+      is routing a fraction of traffic to an unhealthy or slow backend.
+      The intermittent pattern (some requests fast, some slow) maps
+      to which backend handles the request.
+    detection_path:
+      - "Per-backend latency metrics show one backend p99 much higher"
+      - "curl directly to backends: one is slow, others are fast"
+      - "LB access logs show one target IP getting disproportionate traffic"
+    fix: "Fix health check configuration or remove the slow backend"
+    postmortem_hint: "Health check interval increased to 'reduce noise' without review"
+
+  - id: packet_loss_noisy_neighbor
+    display: "Packet Loss — Noisy Neighbor"
+    difficulty: senior
+    explanation: >
+      A co-located workload is saturating the network interface, causing
+      packet drops for other tenants. Affects only pods on specific nodes.
+    detection_path:
+      - "mtr shows loss only when source/dest on specific nodes"
+      - "kubectl get pods -o wide shows all affected pods on same node"
+      - "ifconfig / ip -s link shows RX dropped counter rising on that node"
+    fix: "Identify and resource-limit the noisy workload; move affected pods"
+    postmortem_hint: "No network I/O limits on tenant workloads"
+
+# ─── Clue Pool ───────────────────────────────────────────────────
+# Each clue is tagged with root_causes it's relevant to.
+# Claude selects 3 clues relevant to the chosen root cause.
+# required: true means Claude must include this clue for that root cause.
+
+clue_pool:
+  - id: mtr_output
+    relevant_to: [mtu_mismatch, tcp_retransmissions, packet_loss_noisy_neighbor, load_balancer_misconfiguration]
+    trigger_keywords: [mtr, traceroute, route, path, hops, packet loss]
+    template: |
+      $ mtr --report {TARGET_HOST}
+      HOST: {SOURCE_HOST}                     Loss%   Snt  Last   Avg  Best  Wrst StDev
+        1. 10.0.0.1                            0.0%    10   0.5   0.5   0.4   0.7   0.1
+        2. {HOP_2}                             0.0%    10   1.2   1.3   1.0   1.8   0.2
+        3. {HOP_3}                      {LOSS}%    10  {LAST}  {AVG}   2.1 {WRST}  {STDEV}
+        4. {TARGET_HOST}                        0.0%    10   3.1   3.2   2.9   3.8   0.2
+    per_root_cause:
+      mtu_mismatch:
+        values: {LOSS: "0.0", LAST: "187", AVG: "185", WRST: "290", STDEV: "41", HOP_3: "10.96.0.1 (node-gateway)"}
+        reveals: "No packet loss — MTU issues often show as latency spikes (fragmentation + retransmit) not clean loss"
+      tcp_retransmissions:
+        values: {LOSS: "12.0", LAST: "312", AVG: "298", WRST: "890", STDEV: "187", HOP_3: "10.96.0.1"}
+        reveals: "12% packet loss at hop 3 — this is the lossy link causing TCP retransmission backoff"
+      packet_loss_noisy_neighbor:
+        values: {LOSS: "8.0", LAST: "156", AVG: "143", WRST: "612", STDEV: "134", HOP_3: "10.96.3.1 (node-07-eth0)"}
+        reveals: "Loss concentrated at node-07 NIC — interface is saturated by a co-located workload"
+
+  - id: ping_large_packet
+    relevant_to: [mtu_mismatch]
+    required_for: [mtu_mismatch]
+    trigger_keywords: [ping, mtu, packet size, large packet, fragmentation]
+    template: |
+      $ ping {TARGET_HOST} -c 3
+      PING {TARGET_HOST}: 56 data bytes
+      64 bytes from {TARGET_IP}: icmp_seq=0 ttl=62 time=1.4 ms
+      64 bytes from {TARGET_IP}: icmp_seq=1 ttl=62 time=1.3 ms
+      64 bytes from {TARGET_IP}: icmp_seq=2 ttl=62 time=1.4 ms
+
+      $ ping {TARGET_HOST} -M do -s 1472 -c 3
+      PING {TARGET_HOST}: 1472 data bytes
+      ping: local error: Message too long, mtu=1450
+      ping: local error: Message too long, mtu=1450
+      ping: local error: Message too long, mtu=1450
+    reveals: "Small packets pass; large packets fail — classic MTU mismatch signature"
+
+  - id: ip_link_show
+    relevant_to: [mtu_mismatch]
+    required_for: [mtu_mismatch]
+    trigger_keywords: [mtu, interface, ip link, ifconfig, network interface]
+    template: |
+      $ ip link show
+      1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536
+      2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu {ETH0_MTU}
+      3: flannel.1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu {FLANNEL_MTU}
+    per_root_cause:
+      mtu_mismatch:
+        values: {ETH0_MTU: "1500", FLANNEL_MTU: "1500"}
+        reveals: "flannel.1 MTU is 1500 — but the cluster standard for VXLAN overlay is 1450. Node was added without matching cluster MTU."
+
+  - id: dns_query_time
+    relevant_to: [dns_resolution_slow]
+    required_for: [dns_resolution_slow]
+    trigger_keywords: [dns, dig, nslookup, resolve, lookup]
+    template: |
+      $ kubectl exec -it {POD} -- dig {SERVICE}.{NAMESPACE}.svc.cluster.local
+      ;; Query time: 847 msec
+      ;; SERVER: 10.96.0.10#53
+
+      $ kubectl exec -it {POD} -- dig {SERVICE}.{NAMESPACE}.svc.cluster.local.
+      ;; Query time: 2 msec
+    reveals: "Without trailing dot: 847ms (5 NXDOMAIN attempts from ndots:5); with trailing dot: 2ms. FQDN avoids search-path exhaustion."
+
+  - id: coredns_cpu
+    relevant_to: [dns_resolution_slow]
+    trigger_keywords: [coredns, cpu, resource, kube-system, dns pod]
+    template: |
+      $ kubectl top pod -n kube-system
+      NAME                       CPU(cores)   MEMORY(bytes)
+      coredns-5d78c9869d-jnm4x   988m         124Mi
+      coredns-5d78c9869d-vqt7p   976m         118Mi
+      etcd-control-plane         45m          312Mi
+    reveals: "CoreDNS pods at ~1000m CPU — they're at their limit (1000m). DNS queries are queuing."
+
+  - id: iptables_drop_counter
+    relevant_to: [firewall_acl_throttling]
+    required_for: [firewall_acl_throttling]
+    trigger_keywords: [iptables, firewall, acl, rules, DROP, block]
+    template: |
+      $ iptables -L FORWARD -n -v
+      Chain FORWARD (policy DROP)
+      target  prot opt source          destination     pkts   bytes
+      ACCEPT  tcp  --  10.0.0.0/8     anywhere        128K   87M
+      DROP    tcp  --  anywhere       10.96.8.0/24    4821   3.2M
+      ACCEPT  all  --  anywhere       anywhere        892K   651M
+    reveals: "DROP rule on 10.96.8.0/24 has 4821 dropped packets — that subnet includes the target service's pods"
+
+  - id: ss_retransmit
+    relevant_to: [tcp_retransmissions]
+    required_for: [tcp_retransmissions]
+    trigger_keywords: [ss, netstat, retransmit, tcp, socket stats]
+    template: |
+      $ ss -s
+      Total: 847 (kernel 891)
+      TCP:   412 (estab 280, closed 82, orphaned 12, synrecv 0, timewait 82/0)
+
+      Transport Total  IP   IPv6
+      *         891    -    -
+      RAW       0      0    0
+      UDP       28     18   10
+      TCP       330    210  120
+      INET      358    228  130
+      FRAG      0      0    0
+
+      $ netstat -s | grep -i retransmit
+      4821 segments retransmitted
+      (3 min ago: 312 segments retransmitted)
+    reveals: "4821 retransmissions in 3 minutes (vs 312 baseline) — TCP is resending at high rate due to packet loss"
+
+  - id: lb_backend_latency
+    relevant_to: [load_balancer_misconfiguration]
+    required_for: [load_balancer_misconfiguration]
+    trigger_keywords: [load balancer, backend, target group, health check, upstream]
+    template: |
+      $ for ip in {BACKEND_IPS}; do
+          echo -n "$ip: "; curl -s -o /dev/null -w "%{time_total}s\n" http://$ip:{PORT}/health
+        done
+      10.0.1.42:8080: 0.048s
+      10.0.1.43:8080: 0.051s
+      10.0.1.44:8080: 3.842s
+    reveals: "Backend 10.0.1.44 takes 3.8s vs 50ms for healthy backends — unhealthy backend not removed because health check interval is 120s"
+
+  - id: node_interface_drops
+    relevant_to: [packet_loss_noisy_neighbor]
+    required_for: [packet_loss_noisy_neighbor]
+    trigger_keywords: [interface, dropped, rx, tx, ifconfig, ip link, network stats]
+    template: |
+      $ ip -s link show eth0
+      2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500
+          RX: bytes  packets   errors  dropped overrun mcast
+          {RX_BYTES} {RX_PKTS}       0  {RX_DROP}        0     0
+          TX: bytes  packets   errors  dropped carrier collsns
+          {TX_BYTES} {TX_PKTS}        0        0       0        0
+    per_root_cause:
+      packet_loss_noisy_neighbor:
+        values: {RX_BYTES: "892834712183", RX_PKTS: "1047293812", RX_DROP: "48271", TX_BYTES: "734192837401", TX_PKTS: "983471209"}
+        reveals: "48271 RX drops on node-07 eth0 — NIC buffer overflow from a co-located workload saturating ingress"
+
+  - id: tcpdump_frag_needed
+    relevant_to: [mtu_mismatch]
+    trigger_keywords: [tcpdump, capture, packet capture, wireshark, icmp]
+    template: |
+      $ tcpdump -i eth0 -n icmp
+      09:42:18.123 IP 10.0.1.5 > 10.0.1.12: ICMP 10.96.0.1 unreachable - need to frag (mtu 1450), length 556
+      09:42:18.456 IP 10.0.1.5 > 10.0.1.12: ICMP 10.96.0.1 unreachable - need to frag (mtu 1450), length 556
+      09:42:19.201 IP 10.0.1.5 > 10.0.1.12: ICMP 10.96.0.1 unreachable - need to frag (mtu 1450), length 556
+    reveals: "ICMP 'need to frag' messages from the gateway — packets larger than 1450 bytes are being rejected, confirming MTU mismatch at the overlay"
+
+# ─── Red Herrings ────────────────────────────────────────────────
+# Always include 2 red herrings. These cross-cut all root causes.
+# Claude picks 2 from this pool that are plausible for the chosen
+# symptom profile and assigns them to the incident.
+
+red_herring_pool:
+  - id: cpu_normal
+    trigger_keywords: [cpu, top, usage, processor]
+    template: |
+      $ kubectl top nodes
+      NAME          CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+      node-01       312m         7%     2847Mi          35%
+      node-02       287m         6%     2614Mi          32%
+      node-03       294m         7%     2792Mi          34%
+    note: "CPU is normal — latency is not a resource pressure issue"
+
+  - id: memory_normal
+    trigger_keywords: [memory, oom, ram, mem]
+    template: |
+      $ kubectl top pod -n {NAMESPACE}
+      NAME                           CPU(cores)   MEMORY(bytes)
+      {SERVICE}-{HASH}-xkp2q        {CPU}m       {MEM}Mi
+      {SERVICE}-{HASH}-m4n7r        {CPU2}m      {MEM2}Mi
+    note: "Memory is within normal range — not a memory pressure issue"
+
+  - id: pod_restarts_none
+    trigger_keywords: [restart, crash, CrashLoopBackOff, OOMKilled]
+    template: |
+      $ kubectl get pods -n {NAMESPACE}
+      NAME                           READY   STATUS    RESTARTS   AGE
+      {SERVICE}-{HASH}-xkp2q        1/1     Running   0          3h
+      {SERVICE}-{HASH}-m4n7r        1/1     Running   0          3h
+    note: "Pods are Running with no restarts — this is not a crash/OOM issue"
+
+  - id: disk_normal
+    trigger_keywords: [disk, storage, pvc, volume, df, iops]
+    template: |
+      $ df -h
+      Filesystem      Size  Used Avail Use% Mounted on
+      /dev/sda1        40G   12G   26G  32% /
+      /dev/sdb         80G   31G   45G  41% /var
+    note: "Disk usage is well within limits — not a disk I/O or storage issue"
+
+  - id: unrelated_service_restart
+    trigger_keywords: [restart, logs, service restart, rolling]
+    template: |
+      $ kubectl get events -n {NAMESPACE} --sort-by='.lastTimestamp' | tail -5
+      4h    Normal   ScalingReplicaSet   deployment/{OTHER_SERVICE}   Scaled up to 3
+      4h    Normal   Pulled              pod/{OTHER_SERVICE}-xk9p2    Image pulled
+      4h    Normal   Started             pod/{OTHER_SERVICE}-xk9p2    Container started
+    note: "The rolling restart 4 hours ago was {OTHER_SERVICE} — unrelated to the current incident, which started 8 minutes ago"
+
+# ─── Turn Budget Templates ────────────────────────────────────────
+# Claude fills in the root cause references based on which
+# root_cause was selected. Turn 3 = pressure only, turn 6 =
+# directional hint, turn 9 = strong hint, turn 12 = reveals.
+
+turn_budget_templates:
+  "3": "[Slack · #incidents] @oncall {STAKEHOLDER} is asking for an ETA. How are we doing?"
+  "6": "[Slack · #incidents] @oncall I'm seeing some interesting things in {DIAGNOSTIC_AREA} metrics — have you checked there yet?"
+  "9": "[Slack · #incidents] @oncall I think this might be related to {DIRECTIONAL_HINT}. Does that match what you're seeing?"
+  "12": "[Slack · #incidents] @oncall Pretty sure it's {ROOT_CAUSE_SUMMARY}. Can you confirm and apply the fix?"
+
+per_root_cause_turn_budget:
+  mtu_mismatch:
+    STAKEHOLDER: "the network team"
+    DIAGNOSTIC_AREA: "packet size distribution"
+    DIRECTIONAL_HINT: "MTU settings — node-03 was added last week"
+    ROOT_CAUSE_SUMMARY: "MTU mismatch on node-03 (1500 vs cluster standard 1450)"
+  dns_resolution_slow:
+    STAKEHOLDER: "the platform team"
+    DIAGNOSTIC_AREA: "CoreDNS"
+    DIRECTIONAL_HINT: "DNS resolution times — something looks off with CoreDNS CPU"
+    ROOT_CAUSE_SUMMARY: "CoreDNS at CPU limit causing DNS query queuing — try FQDN with trailing dot as immediate mitigation"
+  firewall_acl_throttling:
+    STAKEHOLDER: "security"
+    DIAGNOSTIC_AREA: "iptables"
+    DIRECTIONAL_HINT: "recent firewall changes — there was a security policy update yesterday"
+    ROOT_CAUSE_SUMMARY: "iptables DROP rule added yesterday is matching legitimate service traffic to 10.96.8.0/24"
+  tcp_retransmissions:
+    STAKEHOLDER: "the infrastructure team"
+    DIAGNOSTIC_AREA: "network statistics — retransmit counters are elevated"
+    DIRECTIONAL_HINT: "packet loss somewhere in the network path — mtr would tell you where"
+    ROOT_CAUSE_SUMMARY: "12% packet loss at the spine link — TCP retransmission backoff is causing latency spikes"
+  load_balancer_misconfiguration:
+    STAKEHOLDER: "product"
+    DIAGNOSTIC_AREA: "load balancer backend health"
+    DIRECTIONAL_HINT: "one of the backends — I see one with much higher latency in the LB metrics"
+    ROOT_CAUSE_SUMMARY: "backend 10.0.1.44 is unhealthy and stuck in rotation because health check interval is 120s"
+  packet_loss_noisy_neighbor:
+    STAKEHOLDER: "the ops team"
+    DIAGNOSTIC_AREA: "per-node network statistics"
+    DIRECTIONAL_HINT: "node-07 — all the affected pods are scheduled there and I see interface drop counters rising"
+    ROOT_CAUSE_SUMMARY: "NIC saturation on node-07 from a co-located workload causing RX drops"
+
+# ─── Generation Instructions ─────────────────────────────────────
+# Claude reads these instructions when generating an incident from this template.
+
+generation_instructions: |
+  To generate a unique incident from this template:
+
+  1. Select one root_cause from root_causes. Vary selection across sessions.
+  2. Select 3 clues from clue_pool: all clues with required_for matching the root cause,
+     plus enough clues with relevant_to matching to reach 3 total.
+  3. Select 2 red herrings from red_herring_pool. Pick ones that are plausible to check
+     given the symptom profile.
+  4. Fill opening_message using observable_symptoms only — no root cause hints.
+     Use the context fields: service name, impact, ticket count, duration.
+  5. Fill turn_budget from turn_budget_templates using per_root_cause_turn_budget values
+     for the selected root cause.
+  6. Fill template placeholders: {SERVICE}, {NAMESPACE}, {TARGET_HOST}, {TARGET_IP},
+     {HASH}, {CPU}, {MEM}, etc. Use realistic values.
+
+  Opening message format:
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  {TIME} UTC
+    Service: {SERVICE_NAME}
+    Impact: {IMPACT_DESCRIPTION}
+    Tickets: {TICKET_COUNT} open · Duration: {DURATION} minutes
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  {2-3 sentences of observable symptoms. No root cause. End with: "Where do you start?"}

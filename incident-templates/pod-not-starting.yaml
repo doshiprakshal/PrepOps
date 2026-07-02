@@ -1,0 +1,318 @@
+template_id: pod-not-starting
+display_name: "Pod Won't Start"
+domain: kubernetes
+description: >
+  Pods are stuck in a non-Running state. Root cause could be resource
+  pressure, image issues, misconfigured manifests, or node problems.
+  Claude picks one root cause and generates a unique scenario.
+
+root_causes:
+  - id: resource_quota_exceeded
+    display: "Resource Quota Exhausted"
+    difficulty: intermediate
+    explanation: >
+      Namespace ResourceQuota is exhausted. New pods are admitted to the
+      API server but never scheduled — they stay Pending indefinitely.
+      Existing pods continue running. quota describe shows the limit.
+    detection_path:
+      - "kubectl describe pod shows 'exceeded quota: requests.cpu'"
+      - "kubectl describe resourcequota -n <namespace> shows usage at limit"
+      - "kubectl get events -n <namespace> shows FailedCreate events"
+    fix: "Increase ResourceQuota OR reduce requests on the new pods OR delete unused pods"
+    postmortem_hint: "ResourceQuota set during initial namespace creation and never revisited as team grew"
+
+  - id: image_pull_error
+    display: "Image Pull Failure"
+    difficulty: beginner
+    explanation: >
+      Pod can't pull its container image. Could be wrong tag, deleted
+      image, registry auth failure, or registry outage. Pod loops between
+      Waiting (ErrImagePull) and CrashLoopBackOff-equivalent (ImagePullBackOff).
+    detection_path:
+      - "kubectl get pods shows ImagePullBackOff"
+      - "kubectl describe pod shows 'Failed to pull image: ... 404 Not Found'"
+      - "Image tag was recently changed in the deployment"
+    fix: "Fix image tag/repository reference, or fix registry credentials"
+    postmortem_hint: "Deployment pipeline updated image tag without verifying the new tag was pushed"
+
+  - id: insufficient_node_resources
+    display: "Insufficient Node Resources"
+    difficulty: intermediate
+    explanation: >
+      Cluster nodes don't have enough allocatable CPU/memory to satisfy
+      the pod's requests. Pod stays Pending. This differs from
+      ResourceQuota — the quota is fine, the nodes are full.
+    detection_path:
+      - "kubectl describe pod shows 'Insufficient cpu' or 'Insufficient memory'"
+      - "kubectl describe nodes shows allocatable vs requested — nodes are full"
+      - "kubectl top nodes shows high usage across all nodes"
+    fix: "Scale cluster (add nodes), reduce pod resource requests, or evict lower-priority workloads"
+    postmortem_hint: "Cluster autoscaler not configured; manual node scaling hadn't been done in 6 months"
+
+  - id: pvc_not_bound
+    display: "PVC Not Bound"
+    difficulty: intermediate
+    explanation: >
+      Pod requires a PersistentVolumeClaim that can't be bound — no PV
+      matches the storage class, access mode, or size. Pod stays Pending
+      indefinitely until a PV becomes available.
+    detection_path:
+      - "kubectl get pvc -n <namespace> shows Pending state"
+      - "kubectl describe pvc shows 'no persistent volumes available for this claim'"
+      - "kubectl get storageclass shows the requested class doesn't exist or has no provisioner"
+    fix: "Create a matching PV, fix the storage class name, or fix the access mode"
+    postmortem_hint: "Storage class name changed when cluster migrated, but manifest wasn't updated"
+
+  - id: node_taint_no_toleration
+    display: "Node Taint Without Toleration"
+    difficulty: senior
+    explanation: >
+      All available nodes have a taint that the pod doesn't tolerate.
+      Commonly happens when nodes are tainted for specific workloads
+      (GPU nodes, spot-only) and a new workload doesn't declare the
+      required toleration.
+    detection_path:
+      - "kubectl describe pod shows 'node(s) had untolerated taint'"
+      - "kubectl describe nodes shows taint: gpu=true:NoSchedule on all eligible nodes"
+      - "Pod spec has no tolerations section"
+    fix: "Add toleration to pod spec OR remove taint from a node OR use nodeSelector to target untainted nodes"
+    postmortem_hint: "Nodes were tainted for GPU workloads but general-purpose pods were still being scheduled on them by default"
+
+  - id: liveness_probe_misconfigured
+    display: "Liveness Probe Killing Pods"
+    difficulty: intermediate
+    explanation: >
+      Liveness probe is configured with too-short initialDelaySeconds
+      or a wrong path. Probe fails before the app finishes starting;
+      kubelet kills and restarts the pod. Pod enters CrashLoopBackOff
+      with increasing restart count even though the app is healthy.
+    detection_path:
+      - "kubectl get pods shows CrashLoopBackOff with restart count rising"
+      - "kubectl logs shows app started successfully before the restart"
+      - "kubectl describe pod shows 'Liveness probe failed' in Events"
+    fix: "Increase initialDelaySeconds, fix probe path/port, or switch to startupProbe"
+    postmortem_hint: "Liveness probe copied from a different service without adjusting the startup time"
+
+clue_pool:
+  - id: pod_describe_quota
+    relevant_to: [resource_quota_exceeded]
+    required_for: [resource_quota_exceeded]
+    trigger_keywords: [describe pod, events, why pending, quota, resources]
+    template: |
+      $ kubectl describe pod {POD_NAME} -n {NAMESPACE}
+      ...
+      Events:
+        Type     Reason            Age   From               Message
+        ----     ------            ----  ----               -------
+        Warning  FailedCreate      2m    replicaset-controller  Error creating: pods "{POD_NAME}" is forbidden:
+                                        exceeded quota: requests.cpu, requested: 500m, used: 7500m, limited: 8000m
+    reveals: "CPU quota is full — 7500m of 8000m used, new pod needs 500m more"
+
+  - id: resourcequota_describe
+    relevant_to: [resource_quota_exceeded]
+    required_for: [resource_quota_exceeded]
+    trigger_keywords: [quota, resourcequota, namespace limits, limits]
+    template: |
+      $ kubectl describe resourcequota -n {NAMESPACE}
+      Name:            team-quota
+      Namespace:       {NAMESPACE}
+      Resource         Used    Hard
+      --------         ----    ----
+      requests.cpu     7500m   8000m
+      requests.memory  14Gi    16Gi
+      limits.cpu       15000m  16000m
+      limits.memory    28Gi    32Gi
+      pods             47      50
+    reveals: "CPU requests at 7500m/8000m (93%), pods at 47/50 — quota nearly exhausted. New deployment can't schedule."
+
+  - id: image_pull_backoff_describe
+    relevant_to: [image_pull_error]
+    required_for: [image_pull_error]
+    trigger_keywords: [image, registry, pull, describe, ImagePullBackOff]
+    template: |
+      $ kubectl describe pod {POD_NAME} -n {NAMESPACE}
+      ...
+      Events:
+        Type     Reason          Age    From               Message
+        ----     ------          ----   ----               -------
+        Warning  Failed          2m     kubelet            Failed to pull image "{IMAGE}:{TAG}":
+                                        rpc error: code = Unknown desc = Error response from daemon:
+                                        manifest for {IMAGE}:{TAG} not found: manifest unknown: manifest unknown
+        Warning  BackOff         90s    kubelet            Back-off pulling image "{IMAGE}:{TAG}"
+    reveals: "Image tag '{TAG}' doesn't exist in the registry — deployment was updated with an incorrect or unpublished tag"
+
+  - id: node_resources_full
+    relevant_to: [insufficient_node_resources]
+    required_for: [insufficient_node_resources]
+    trigger_keywords: [describe pod, pending, resources, node, cpu, memory, allocatable]
+    template: |
+      $ kubectl describe pod {POD_NAME} -n {NAMESPACE}
+      ...
+      Events:
+        Type     Reason            Age   From               Message
+        ----     ------            ----  ----               -------
+        Warning  FailedScheduling  3m    default-scheduler  0/3 nodes are available:
+                                        3 Insufficient cpu.
+
+      $ kubectl describe nodes | grep -A5 Allocatable
+      Allocatable:
+        cpu:     3800m
+        memory:  6Gi
+      ...
+      Allocated resources:
+        cpu:     3750m/3800m (98%)
+        memory:  5.8Gi/6Gi (96%)
+    reveals: "All 3 nodes at 98%+ CPU allocation — no room for the new pod's CPU request"
+
+  - id: pvc_pending
+    relevant_to: [pvc_not_bound]
+    required_for: [pvc_not_bound]
+    trigger_keywords: [pvc, persistentvolumeclaim, storage, volume, bound]
+    template: |
+      $ kubectl get pvc -n {NAMESPACE}
+      NAME           STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS      AGE
+      {PVC_NAME}     Pending                                       {STORAGECLASS}    4m
+
+      $ kubectl describe pvc {PVC_NAME} -n {NAMESPACE}
+      Events:
+        Type     Reason                Age   From                         Message
+        ----     ------                ----  ----                         -------
+        Warning  ProvisioningFailed    3m    persistentvolume-controller  storageclass.storage.k8s.io
+                                            "{STORAGECLASS}" not found
+    reveals: "PVC can't bind — storage class '{STORAGECLASS}' doesn't exist. Was renamed during cluster migration."
+
+  - id: node_taints
+    relevant_to: [node_taint_no_toleration]
+    required_for: [node_taint_no_toleration]
+    trigger_keywords: [taint, toleration, node, schedule, affinity, unschedulable]
+    template: |
+      $ kubectl describe pod {POD_NAME} -n {NAMESPACE}
+      ...
+      Events:
+        Warning  FailedScheduling  5m  default-scheduler  0/4 nodes are available:
+                                       4 node(s) had untolerated taint {gpu=true:NoSchedule}.
+
+      $ kubectl describe nodes | grep -A3 Taints
+      Taints: gpu=true:NoSchedule
+      Taints: gpu=true:NoSchedule
+      Taints: gpu=true:NoSchedule
+      Taints: gpu=true:NoSchedule
+    reveals: "All 4 nodes are tainted for GPU workloads. The pod has no tolerations — it can't run anywhere."
+
+  - id: liveness_probe_events
+    relevant_to: [liveness_probe_misconfigured]
+    required_for: [liveness_probe_misconfigured]
+    trigger_keywords: [liveness, probe, crash, restart, backoff, describe]
+    template: |
+      $ kubectl describe pod {POD_NAME} -n {NAMESPACE}
+      ...
+      Containers:
+        {CONTAINER}:
+          Liveness:  http-get http://:{PORT}/{PROBE_PATH} delay=5s timeout=3s period=10s #success=1 #failure=3
+      Events:
+        Warning  Unhealthy  4m   kubelet  Liveness probe failed: HTTP probe failed with statuscode: 000
+        Warning  Killing    4m   kubelet  Container {CONTAINER} failed liveness probe, will be restarted
+        Warning  Unhealthy  94s  kubelet  Liveness probe failed: HTTP probe failed with statuscode: 000
+        Warning  Killing    90s  kubelet  Container {CONTAINER} failed liveness probe, will be restarted
+    reveals: "Liveness probe fires at 5s initialDelay. App logs show startup takes 18-25 seconds. Pod is killed before it's ready."
+
+  - id: pod_logs_before_kill
+    relevant_to: [liveness_probe_misconfigured]
+    trigger_keywords: [logs, stdout, container log, crash log]
+    template: |
+      $ kubectl logs {POD_NAME} -n {NAMESPACE} --previous
+      [2026-07-01 09:42:01] INFO  Starting {SERVICE}...
+      [2026-07-01 09:42:08] INFO  Loading configuration...
+      [2026-07-01 09:42:15] INFO  Connecting to database...
+      [2026-07-01 09:42:19] INFO  Database connected. Running migrations...
+      [2026-07-01 09:42:23] INFO  Migrations complete. Starting HTTP server on :{PORT}
+    reveals: "App takes 22 seconds to be ready. Liveness probe fires at 5s. Pod is killed 3 times during startup — after ~35 seconds each cycle."
+
+red_herring_pool:
+  - id: app_logs_healthy
+    trigger_keywords: [logs, application log, error, crash]
+    template: |
+      $ kubectl logs {POD_NAME} -n {NAMESPACE} 2>/dev/null || echo "No logs (pod not Running)"
+      No logs (pod not Running)
+    note: "Pod never reached Running state — no application logs to inspect"
+
+  - id: network_connectivity_fine
+    trigger_keywords: [network, connectivity, dns, service, curl]
+    template: |
+      $ kubectl exec -it {RUNNING_POD} -n {NAMESPACE} -- curl -s {SERVICE}:8080/health
+      {"status": "ok", "version": "2.1.4"}
+    note: "Existing running pods in the same namespace can reach the service — the issue is the new pods not starting, not networking"
+
+  - id: configmap_exists
+    trigger_keywords: [config, configmap, environment, secrets, env]
+    template: |
+      $ kubectl get configmap -n {NAMESPACE}
+      NAME                   DATA   AGE
+      {SERVICE}-config       4      2h
+      kube-root-ca.crt       1      30d
+    note: "ConfigMap exists and has data — configuration injection is not the issue"
+
+turn_budget_templates:
+  "3": "[Slack · #incidents] @oncall {STAKEHOLDER} says {SERVICE} deployment is stuck. Can we get an update?"
+  "6": "[Slack · #incidents] @oncall I noticed {DIAGNOSTIC_AREA} when I checked — might be worth a look?"
+  "9": "[Slack · #incidents] @oncall I think the issue might be {DIRECTIONAL_HINT}. Does that match what you're seeing?"
+  "12": "[Slack · #incidents] @oncall Confirmed: {ROOT_CAUSE_SUMMARY}. Here's the fix: {FIX_SUMMARY}"
+
+per_root_cause_turn_budget:
+  resource_quota_exceeded:
+    STAKEHOLDER: "the platform team"
+    DIAGNOSTIC_AREA: "the namespace had a ResourceQuota set up — I can see it in kubectl get resourcequota"
+    DIRECTIONAL_HINT: "quota exhaustion — CPU requests are very close to the namespace limit"
+    ROOT_CAUSE_SUMMARY: "namespace CPU quota is exhausted (7500m/8000m used)"
+    FIX_SUMMARY: "increase the quota with kubectl edit resourcequota or reduce requests on the deployment"
+  image_pull_error:
+    STAKEHOLDER: "the release team"
+    DIAGNOSTIC_AREA: "the image tag in the deployment manifest — it was just updated in the release pipeline"
+    DIRECTIONAL_HINT: "the image tag — ImagePullBackOff usually means the tag doesn't exist in the registry"
+    ROOT_CAUSE_SUMMARY: "image tag doesn't exist in the registry"
+    FIX_SUMMARY: "fix the image tag in the deployment to match a tag that was actually pushed"
+  insufficient_node_resources:
+    STAKEHOLDER: "infrastructure"
+    DIAGNOSTIC_AREA: "kubectl describe nodes — allocatable CPU is almost entirely consumed"
+    DIRECTIONAL_HINT: "node capacity — all nodes look like they're at 95%+ CPU allocation"
+    ROOT_CAUSE_SUMMARY: "cluster is out of allocatable CPU — all 3 nodes are at 98%"
+    FIX_SUMMARY: "add a node OR reduce resource requests on lower-priority pods"
+  pvc_not_bound:
+    STAKEHOLDER: "the storage team"
+    DIAGNOSTIC_AREA: "the PVC — it's been Pending for 4 minutes which isn't normal"
+    DIRECTIONAL_HINT: "storage class — the cluster was migrated recently and I think the storage class names changed"
+    ROOT_CAUSE_SUMMARY: "PVC references storage class that no longer exists after cluster migration"
+    FIX_SUMMARY: "update the PVC or deployment to reference the current storage class name"
+  node_taint_no_toleration:
+    STAKEHOLDER: "the platform engineering team"
+    DIAGNOSTIC_AREA: "the node taints — looks like all nodes are GPU-tainted now"
+    DIRECTIONAL_HINT: "node taints — if all nodes have gpu=true:NoSchedule, a pod without tolerations can't run anywhere"
+    ROOT_CAUSE_SUMMARY: "all nodes tainted for GPU workloads; pod has no toleration"
+    FIX_SUMMARY: "add tolerations to the pod spec: tolerations: [{key: gpu, operator: Exists, effect: NoSchedule}]"
+  liveness_probe_misconfigured:
+    STAKEHOLDER: "the app team"
+    DIAGNOSTIC_AREA: "the pod restart count — it keeps incrementing which looks like probe failures"
+    DIRECTIONAL_HINT: "the liveness probe — if the app takes longer to start than the initialDelaySeconds, it'll get killed in a loop"
+    ROOT_CAUSE_SUMMARY: "liveness probe fires at 5s but app takes 22s to start — pod killed every ~35s in a loop"
+    FIX_SUMMARY: "increase initialDelaySeconds to 30s or add a startupProbe with a longer timeout"
+
+generation_instructions: |
+  To generate a unique incident from this template:
+
+  1. Select one root_cause. Prefer harder root causes for senior sessions.
+  2. Include all clues with required_for matching the root cause, plus 1-2 additional
+     relevant clues. Total: 3 clues.
+  3. Include 2 red herrings from red_herring_pool.
+  4. Fill opening_message with: pod name/deployment in question, namespace, visible symptoms
+     (pod status, restart count, duration stuck). No root cause hints.
+  5. Use per_root_cause_turn_budget to fill turn_budget_templates.
+
+  Opening message format:
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  DEPLOYMENT FAILURE  ·  {TIME} UTC
+    Service: {SERVICE_NAME}
+    Symptom: {POD_COUNT} pods stuck in {STATUS} for {DURATION} minutes
+    Namespace: {NAMESPACE}
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  {2-3 sentences of observable facts. No hint. End with: "Where do you start?"}

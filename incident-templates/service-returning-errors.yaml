@@ -1,0 +1,274 @@
+template_id: service-returning-errors
+display_name: "Service Returning Errors"
+domain: sre
+description: >
+  A service is returning 4xx or 5xx errors. Could be a code bug,
+  configuration error, upstream dependency failure, or certificate issue.
+  Claude picks one root cause, selects matching clues, and generates
+  a unique debugging scenario.
+
+root_causes:
+  - id: upstream_dependency_timeout
+    display: "Upstream Dependency Timeout"
+    difficulty: intermediate
+    explanation: >
+      The service is healthy but a downstream dependency (database,
+      cache, external API) is slow or timing out. The service converts
+      these to 5xx responses. Error rate correlates exactly with
+      timeout rate on the upstream call.
+    detection_path:
+      - "Service error rate matches timeout rate on a specific outbound call"
+      - "Service logs show 'upstream timeout' or connection errors to specific host"
+      - "The upstream service has elevated latency in its own metrics"
+    fix: "Fix the upstream service OR add a fallback/circuit breaker OR increase timeout if latency is expected"
+    postmortem_hint: "No circuit breaker — one slow upstream caused cascading errors in the calling service"
+
+  - id: database_connection_pool_exhausted
+    display: "Database Connection Pool Exhausted"
+    difficulty: intermediate
+    explanation: >
+      All database connections in the pool are in use — typically because
+      slow queries are holding connections, or a traffic spike increased
+      demand. New requests queue until timeout, then return 5xx.
+    detection_path:
+      - "Service logs show 'connection pool exhausted' or 'timeout waiting for connection'"
+      - "DB shows max_connections or connection pool limit reached"
+      - "Slow query log shows long-running queries holding connections"
+    fix: "Kill long-running queries, increase pool size, or scale down traffic"
+    postmortem_hint: "Connection pool size not revisited after traffic grew 3x over 6 months"
+
+  - id: tls_cert_expired
+    display: "TLS Certificate Expired"
+    difficulty: beginner
+    explanation: >
+      A TLS certificate has expired. Clients see SSL errors; the service
+      itself may be healthy. Affects external-facing endpoints and any
+      service-to-service calls using mTLS.
+    detection_path:
+      - "Error messages contain 'certificate expired' or 'SSL_ERROR_RX_RECORD_TOO_LONG'"
+      - "openssl s_client -connect shows certificate with past NotAfter date"
+      - "cert-manager events show failed renewal"
+    fix: "Renew/rotate the certificate; if cert-manager: check why auto-renewal failed"
+    postmortem_hint: "cert-manager renewal failed silently 30 days ago; no alert on certificate expiry"
+
+  - id: rate_limit_misconfiguration
+    display: "Rate Limit Too Aggressive"
+    difficulty: intermediate
+    explanation: >
+      A rate limiter (nginx, envoy, application-level) is configured with
+      a threshold that's too low for the current traffic. Legitimate requests
+      are being rejected with 429. The spike in errors starts exactly when
+      traffic exceeds the rate limit threshold.
+    detection_path:
+      - "Error codes are 429 (Too Many Requests) not 5xx"
+      - "Rate limit metrics show limit being hit consistently"
+      - "nginx/envoy logs show 'limiting requests' or 'rate limit exceeded'"
+    fix: "Increase rate limit threshold OR add per-client limits instead of global"
+    postmortem_hint: "Rate limit set based on old baseline traffic; not reviewed after 2x traffic growth"
+
+  - id: config_change_bad_value
+    display: "Bad Configuration Value"
+    difficulty: beginner
+    explanation: >
+      A recent configuration change introduced an invalid value — wrong
+      database host, incorrect feature flag, invalid timeout value (e.g.
+      200ms where the service p99 is 310ms). Service started returning
+      errors exactly when the config change was applied.
+    detection_path:
+      - "Error onset correlates exactly with a deployment or config change"
+      - "Service logs show connection refused to the configured host"
+      - "diff of config before/after the change shows the problematic value"
+    fix: "Revert the config change"
+    postmortem_hint: "Config change went through automated deploy without a staged rollout or validation step"
+
+clue_pool:
+  - id: error_rate_dashboard
+    relevant_to: [upstream_dependency_timeout, database_connection_pool_exhausted, tls_cert_expired, rate_limit_misconfiguration, config_change_bad_value]
+    trigger_keywords: [error rate, 5xx, 4xx, dashboard, metrics, grafana, prometheus]
+    template: |
+      [Grafana: {SERVICE} Error Rate — last 30m]
+
+      {TIME_-30}  0.1%  ░
+      {TIME_-25}  0.1%  ░
+      {TIME_-20}  0.2%  ░
+      {TIME_-15}  0.2%  ░
+      {TIME_-10}  {BEFORE_PCT}%  {BEFORE_BAR}
+      {TIME_-5}   {ONSET_PCT}%  {ONSET_BAR} ← spike
+      {TIME_0}    {CURRENT_PCT}%  {CURRENT_BAR} ← now
+    per_root_cause:
+      upstream_dependency_timeout:
+        values: {BEFORE_PCT: "0.3", BEFORE_BAR: "░░", ONSET_PCT: "8.4", ONSET_BAR: "████████", CURRENT_PCT: "9.1", CURRENT_BAR: "█████████"}
+        reveals: "Error rate jumped from 0.3% to 9% at a specific time — correlate with upstream changes"
+      database_connection_pool_exhausted:
+        values: {BEFORE_PCT: "0.2", BEFORE_BAR: "░", ONSET_PCT: "12.7", ONSET_BAR: "████████████", CURRENT_PCT: "14.2", CURRENT_BAR: "██████████████"}
+        reveals: "Error rate at 14% and rising — pool exhaustion tends to get worse as queuing builds up"
+      tls_cert_expired:
+        values: {BEFORE_PCT: "0.0", BEFORE_BAR: "░", ONSET_PCT: "99.1", ONSET_BAR: "████████████████████", CURRENT_PCT: "99.8", CURRENT_BAR: "████████████████████"}
+        reveals: "Near-100% error rate — this is a complete outage. TLS failure is the most common cause of sudden near-100% error rates."
+      rate_limit_misconfiguration:
+        values: {BEFORE_PCT: "0.1", BEFORE_BAR: "░", ONSET_PCT: "23.4", ONSET_BAR: "███████████████████████", CURRENT_PCT: "22.8", CURRENT_BAR: "██████████████████████"}
+        reveals: "Error rate elevated (~23%) but stable — not growing. Rate limit issues are usually stable, not cascading."
+      config_change_bad_value:
+        values: {BEFORE_PCT: "0.1", BEFORE_BAR: "░", ONSET_PCT: "87.2", ONSET_BAR: "████████████████████", CURRENT_PCT: "88.1", CURRENT_BAR: "████████████████████"}
+        reveals: "Error rate jumped to 87% at a specific moment — correlate with any deployments at that time"
+
+  - id: service_logs_errors
+    relevant_to: [upstream_dependency_timeout, database_connection_pool_exhausted, config_change_bad_value]
+    required_for: [upstream_dependency_timeout, database_connection_pool_exhausted, config_change_bad_value]
+    trigger_keywords: [logs, error log, service log, application log, kubectl logs]
+    template: |
+      $ kubectl logs -n {NAMESPACE} deployment/{SERVICE} --tail=20
+      {LOG_LINES}
+    per_root_cause:
+      upstream_dependency_timeout:
+        LOG_LINES: |
+          [ERROR] POST /api/v1/payment: upstream timeout after 5000ms calling payments-db.prod:5432
+          [ERROR] POST /api/v1/payment: upstream timeout after 5000ms calling payments-db.prod:5432
+          [ERROR] GET  /api/v1/status: upstream timeout after 5000ms calling payments-db.prod:5432
+          [INFO]  GET  /api/v1/health: 200 OK (3ms)
+          [ERROR] POST /api/v1/payment: upstream timeout after 5000ms calling payments-db.prod:5432
+        reveals: "All errors are upstream timeouts to payments-db.prod:5432 — the database is the slow component"
+      database_connection_pool_exhausted:
+        LOG_LINES: |
+          [ERROR] POST /api/v1/order: could not acquire connection from pool after 30000ms (pool size: 10, in-use: 10)
+          [ERROR] POST /api/v1/order: could not acquire connection from pool after 30000ms (pool size: 10, in-use: 10)
+          [WARN]  Connection pool: all 10/10 connections in use; 12 requests queued
+          [ERROR] POST /api/v1/order: could not acquire connection from pool after 30000ms (pool size: 10, in-use: 10)
+        reveals: "Pool of 10 connections exhausted; requests are queuing and timing out at 30s"
+      config_change_bad_value:
+        LOG_LINES: |
+          [ERROR] POST /api/v1/charge: connection refused to payments-processor.prod:8081
+          [ERROR] POST /api/v1/charge: connection refused to payments-processor.prod:8081
+          [ERROR] POST /api/v1/charge: connection refused to payments-processor.prod:8081
+          [INFO]  GET  /health: 200 OK
+        reveals: "Connection refused to payments-processor.prod:8081 — either that host doesn't exist or port is wrong"
+
+  - id: ssl_cert_check
+    relevant_to: [tls_cert_expired]
+    required_for: [tls_cert_expired]
+    trigger_keywords: [tls, ssl, certificate, cert, https, openssl]
+    template: |
+      $ openssl s_client -connect {ENDPOINT}:443 -servername {ENDPOINT} < /dev/null 2>&1 | grep -E "notAfter|Verify"
+      notAfter=Jun 28 00:00:00 2026 GMT
+      Verify return code: 10 (certificate has expired)
+    reveals: "Certificate expired June 28 — today is July 1. 3-day-old expiry. cert-manager renewal must have failed."
+
+  - id: certmanager_events
+    relevant_to: [tls_cert_expired]
+    trigger_keywords: [cert-manager, certificate, renewal, certmanager, ingress]
+    template: |
+      $ kubectl describe certificate {CERT_NAME} -n {NAMESPACE}
+      Status:
+        Conditions:
+          Type:    Ready
+          Status:  False
+          Reason:  Errored
+          Message: Failed to finalize order: 429 urn:ietf:params:acme:error:rateLimited
+                   Error finalizing order :: too many certificates already issued for exact
+                   set of domains in the last 168 hours: {DOMAIN}
+    reveals: "cert-manager hit Let's Encrypt rate limits and couldn't renew. Certificate expired while renewal was blocked."
+
+  - id: rate_limit_logs
+    relevant_to: [rate_limit_misconfiguration]
+    required_for: [rate_limit_misconfiguration]
+    trigger_keywords: [rate limit, 429, nginx, envoy, throttle, limit]
+    template: |
+      $ kubectl logs -n ingress-nginx deployment/ingress-nginx-controller | grep "limiting" | tail -10
+      2026/07/01 09:42:01 [error] 24#24: *8471 limiting requests, excess: 100.621 by zone "api_limit", client: 10.0.1.5
+      2026/07/01 09:42:01 [error] 24#24: *8472 limiting requests, excess: 101.234 by zone "api_limit", client: 10.0.1.8
+      2026/07/01 09:42:01 [error] 24#24: *8473 limiting requests, excess: 99.871 by zone "api_limit", client: 10.0.1.12
+
+      $ kubectl get configmap ingress-nginx-controller -n ingress-nginx -o yaml | grep -A2 rate
+        nginx.ingress.kubernetes.io/limit-rps: "10"
+    reveals: "Rate limit set to 10 RPS globally. Current traffic is ~110 RPS. 91% of requests being rejected."
+
+  - id: recent_deployments
+    relevant_to: [config_change_bad_value, rate_limit_misconfiguration]
+    trigger_keywords: [deployment, config, change, rollout, history, git, version]
+    template: |
+      $ kubectl rollout history deployment/{SERVICE} -n {NAMESPACE}
+      REVISION  CHANGE-CAUSE
+      22        image: v3.1.2 (3 days ago)
+      23        config: update timeout settings (12 minutes ago)
+
+      $ kubectl diff -f {SERVICE}-deployment.yaml 2>/dev/null | grep "timeout"
+      - timeout: 2000ms
+      + timeout: 200ms
+    reveals: "Config change 12 minutes ago changed timeout from 2000ms to 200ms — onset of errors matches exactly"
+
+red_herring_pool:
+  - id: pod_count_normal
+    trigger_keywords: [pods, replicas, scaling, autoscaler, hpa]
+    template: |
+      $ kubectl get deployment {SERVICE} -n {NAMESPACE}
+      NAME      READY   UP-TO-DATE   AVAILABLE   AGE
+      {SERVICE} 3/3     3            3           14d
+    note: "Correct replica count — this is not a scaling issue"
+
+  - id: node_resources_fine
+    trigger_keywords: [node, cpu, memory, resource]
+    template: |
+      $ kubectl top nodes
+      NAME      CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+      node-01   480m         12%    3891Mi          48%
+      node-02   512m         13%    3724Mi          46%
+      node-03   448m         11%    3812Mi          47%
+    note: "Node resources are healthy — not a capacity issue at the node level"
+
+  - id: dns_resolves
+    trigger_keywords: [dns, resolve, lookup, nslookup, hostname]
+    template: |
+      $ kubectl exec -it {POD} -n {NAMESPACE} -- nslookup {SERVICE}.{NAMESPACE}.svc.cluster.local
+      Server: 10.96.0.10
+      Name: {SERVICE}.{NAMESPACE}.svc.cluster.local
+      Address: 10.96.8.42
+    note: "DNS resolves correctly — not a DNS or service discovery issue"
+
+turn_budget_templates:
+  "3": "[Slack · #incidents] @oncall {STAKEHOLDER} is asking about the {SERVICE} errors. Any update?"
+  "6": "[Slack · #incidents] @oncall I'm looking at {DIAGNOSTIC_AREA}. Seems relevant."
+  "9": "[Slack · #incidents] @oncall I think it might be {DIRECTIONAL_HINT}."
+  "12": "[Slack · #incidents] @oncall Confirmed: {ROOT_CAUSE_SUMMARY}. Fix: {FIX_SUMMARY}"
+
+per_root_cause_turn_budget:
+  upstream_dependency_timeout:
+    STAKEHOLDER: "the payments team"
+    DIAGNOSTIC_AREA: "the upstream dependency metrics — payments-db latency spiked 8 minutes ago"
+    DIRECTIONAL_HINT: "the database — every error in the logs is a timeout to payments-db"
+    ROOT_CAUSE_SUMMARY: "payments-db is slow; all errors are upstream timeouts from the service to the DB"
+    FIX_SUMMARY: "check payments-db health; add circuit breaker to stop cascading failures while DB recovers"
+  database_connection_pool_exhausted:
+    STAKEHOLDER: "the platform team"
+    DIAGNOSTIC_AREA: "connection pool metrics — the pool looks full"
+    DIRECTIONAL_HINT: "connection pool exhaustion — logs show all 10 connections in use"
+    ROOT_CAUSE_SUMMARY: "DB connection pool (size 10) exhausted; requests queuing and timing out"
+    FIX_SUMMARY: "kill any long-running queries; increase pool size to 50 in config and restart"
+  tls_cert_expired:
+    STAKEHOLDER: "security"
+    DIAGNOSTIC_AREA: "the certificate status — I got an SSL error when I tried to curl the endpoint"
+    DIRECTIONAL_HINT: "certificate expiry — cert-manager might have failed to renew"
+    ROOT_CAUSE_SUMMARY: "TLS certificate expired June 28; cert-manager renewal was blocked by Let's Encrypt rate limits"
+    FIX_SUMMARY: "issue a new cert manually (or wait 7 days for rate limit to clear); configure a staging cert as fallback"
+  rate_limit_misconfiguration:
+    STAKEHOLDER: "the frontend team"
+    DIAGNOSTIC_AREA: "nginx logs — 'limiting requests' errors showing up a lot"
+    DIRECTIONAL_HINT: "the rate limit — nginx has a 10 RPS global limit and traffic is 10x that now"
+    ROOT_CAUSE_SUMMARY: "nginx rate limit (10 RPS global) is too low for current traffic (~110 RPS)"
+    FIX_SUMMARY: "update limit-rps to 200 in the ingress configmap and apply"
+  config_change_bad_value:
+    STAKEHOLDER: "the release manager"
+    DIAGNOSTIC_AREA: "recent deployments — there was a config change 12 minutes ago right when errors started"
+    DIRECTIONAL_HINT: "the config change — timeout was changed from 2000ms to 200ms and the service p99 is 310ms"
+    ROOT_CAUSE_SUMMARY: "timeout config changed from 2000ms to 200ms; p99 latency is 310ms so most requests now time out"
+    FIX_SUMMARY: "kubectl rollout undo deployment/{SERVICE} to revert the config change"
+
+generation_instructions: |
+  To generate an incident from this template:
+
+  1. Select one root_cause.
+  2. Include all required clues plus 1 additional relevant clue (total: 3 clues).
+  3. Include 2 red herrings.
+  4. Opening: error rate %, error code (5xx or 4xx), service name, duration.
+     No root cause. Include: "No recent deployments" only if the root cause
+     is NOT config_change_bad_value.
+  5. Fill turn_budget from templates + per_root_cause values.

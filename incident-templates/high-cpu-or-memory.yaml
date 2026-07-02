@@ -1,0 +1,269 @@
+template_id: high-cpu-or-memory
+display_name: "High CPU or Memory"
+domain: linux
+description: >
+  A service or node is at high CPU or memory. Could be a runaway process,
+  memory leak, cache pressure, or a legitimate load spike. Claude picks
+  one root cause and generates a unique debugging scenario.
+
+root_causes:
+  - id: memory_leak
+    display: "Memory Leak"
+    difficulty: senior
+    explanation: >
+      A process is slowly allocating memory and not releasing it.
+      RSS grows over hours or days. Eventually hits OOM limits and
+      is killed. The key signal is slow, monotonic memory growth —
+      not a spike.
+    detection_path:
+      - "kubectl top pod shows memory growing over time (check past values in Prometheus)"
+      - "ps aux shows RSS growing since last restart"
+      - "Heap dump (if JVM) or /proc/{pid}/smaps shows retained allocations"
+    fix: "Identify the leaked object type (heap dump/profiler); restart as mitigation; fix in code"
+    postmortem_hint: "No memory growth alert — only an OOMKill alert which fires after the fact"
+
+  - id: cpu_throttling_from_limits
+    display: "CPU Throttling from Container Limits"
+    difficulty: intermediate
+    explanation: >
+      CPU limit is set too low for the workload. Kernel CFS throttles
+      the process when it exceeds its CPU budget for the 100ms period.
+      The app appears slow or unresponsive even though overall node CPU
+      is not high. container_cpu_cfs_throttled_seconds_total is elevated.
+    detection_path:
+      - "kubectl top pod shows low CPU usage — but app is slow"
+      - "Prometheus: container_cpu_cfs_throttled_seconds_total rising"
+      - "kubectl describe pod shows limits.cpu is low relative to requests"
+    fix: "Increase CPU limit OR remove CPU limit (request still set for scheduling)"
+    postmortem_hint: "CPU limits set from a template without profiling the actual workload"
+
+  - id: fork_bomb_runaway_process
+    display: "Runaway Child Process / Fork Bomb"
+    difficulty: senior
+    explanation: >
+      A script or process is spawning child processes faster than they
+      complete — or a fork bomb is consuming all available PIDs and CPU.
+      Load average spikes; ps aux shows hundreds of similar processes.
+    detection_path:
+      - "uptime / w shows load average >> number of CPUs"
+      - "ps aux | sort -k3 -rn shows many identical processes with high CPU"
+      - "pstree shows deep process tree or many siblings from one parent"
+    fix: "kill -9 the parent process; if fork bomb: reboot or reduce nproc limit"
+    postmortem_hint: "No per-process monitoring; cron job had no exit condition"
+
+  - id: cache_miss_db_pressure
+    display: "Cache Miss Cascade to DB"
+    difficulty: intermediate
+    explanation: >
+      Cache was flushed or a cache TTL expired for a high-traffic key.
+      All requests now hit the database directly. DB CPU spikes; app
+      CPU appears normal. This is often mistaken for a DB hardware issue.
+    detection_path:
+      - "App CPU is normal; database CPU is high"
+      - "Cache hit rate metric shows drop from 95%+ to near 0"
+      - "DB slow query log shows queries that should be cached"
+    fix: "Warm the cache manually (pre-populate critical keys) or restart cache with import"
+    postmortem_hint: "No cache hit rate SLI; cache flush happened during routine maintenance without a warm-up plan"
+
+  - id: jvm_gc_pressure
+    display: "JVM GC Pressure"
+    difficulty: senior
+    explanation: >
+      JVM garbage collector is running frequently and occupying significant
+      CPU. Full GC pauses cause latency spikes. Heap is nearly full.
+      Symptom: CPU alternates between high and low in a sawtooth pattern
+      that correlates with GC cycles.
+    detection_path:
+      - "jstat -gc <pid> shows high GC frequency and low heap free space"
+      - "CPU usage shows sawtooth pattern correlating with GC cycles"
+      - "Application logs show 'GC overhead limit exceeded' or STW pause warnings"
+    fix: "Increase heap size (-Xmx) OR fix memory leak OR tune GC settings (-XX:+UseG1GC)"
+    postmortem_hint: "Heap size set based on old traffic volume; traffic grew 4x without a corresponding heap increase"
+
+clue_pool:
+  - id: kubectl_top_pod
+    relevant_to: [memory_leak, cpu_throttling_from_limits, cache_miss_db_pressure]
+    trigger_keywords: [top, memory, cpu, usage, resource]
+    template: |
+      $ kubectl top pod -n {NAMESPACE}
+      NAME                         CPU(cores)   MEMORY(bytes)
+      {SERVICE}-{HASH}-xkp2q      {CPU1}m      {MEM1}Mi
+      {SERVICE}-{HASH}-m4n7r      {CPU2}m      {MEM2}Mi
+    per_root_cause:
+      memory_leak:
+        values: {CPU1: "180", CPU2: "165", MEM1: "1891", MEM2: "1847"}
+        reveals: "Memory at 1.8-1.9Gi — check if this has been growing over time"
+      cpu_throttling_from_limits:
+        values: {CPU1: "348", CPU2: "362", MEM1: "512", MEM2: "498"}
+        reveals: "CPU looks moderate (350m) — but if the limit is 400m and app is CPU-intensive, throttling may be the issue"
+      cache_miss_db_pressure:
+        values: {CPU1: "85", CPU2: "92", MEM1: "890", MEM2: "912"}
+        reveals: "App CPU is low (90m) — the pressure is downstream, not in the app itself"
+
+  - id: prometheus_memory_growth
+    relevant_to: [memory_leak, jvm_gc_pressure]
+    required_for: [memory_leak]
+    trigger_keywords: [prometheus, grafana, metrics, trend, history, memory growth]
+    template: |
+      [Grafana: Memory Usage — {SERVICE} — last 12h]
+
+      09:00  781 Mi  ████░░░░░░░░░
+      11:00  924 Mi  █████░░░░░░░░
+      13:00  1108 Mi ██████░░░░░░░
+      15:00  1344 Mi ████████░░░░░
+      17:00  1589 Mi ██████████░░░
+      19:00  1891 Mi ████████████░ ← current
+    reveals: "Memory growing ~110Mi per hour for 12 hours — this is a leak pattern, not a spike"
+
+  - id: cfs_throttle_metric
+    relevant_to: [cpu_throttling_from_limits]
+    required_for: [cpu_throttling_from_limits]
+    trigger_keywords: [throttle, cfs, cpu limit, throttled, slow]
+    template: |
+      [Prometheus query: rate(container_cpu_cfs_throttled_seconds_total{pod=~"{SERVICE}.*"}[5m])]
+
+      Result:
+      container_cpu_cfs_throttled_seconds_total{pod="{SERVICE}-{HASH}-xkp2q"}  0.847
+      container_cpu_cfs_throttled_seconds_total{pod="{SERVICE}-{HASH}-m4n7r"}  0.831
+
+      $ kubectl describe pod {SERVICE}-{HASH}-xkp2q -n {NAMESPACE} | grep -A4 "Limits"
+        Limits:
+          cpu: 400m
+          memory: 1Gi
+        Requests:
+          cpu: 200m
+    reveals: "Container throttled 84% of the time (0.847 out of 1.0). CPU limit of 400m is the bottleneck — not available node CPU."
+
+  - id: ps_runaway
+    relevant_to: [fork_bomb_runaway_process]
+    required_for: [fork_bomb_runaway_process]
+    trigger_keywords: [ps, process, top, load, cpu, runaway]
+    template: |
+      $ ps aux --sort=-%cpu | head -20
+      USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+      www-data  4821 98.2  0.1   5136  1024 ?        R    09:42   8:12 /bin/sh /opt/scripts/report.sh
+      www-data  4824 97.8  0.1   5136  1024 ?        R    09:42   8:09 /bin/sh /opt/scripts/report.sh
+      www-data  4827 97.4  0.1   5136  1024 ?        R    09:42   8:07 /bin/sh /opt/scripts/report.sh
+      www-data  4830 97.1  0.1   5136  1024 ?        R    09:42   8:05 /bin/sh /opt/scripts/report.sh
+      www-data  4833 96.8  0.1   5136  1024 ?        R    09:42   8:03 /bin/sh /opt/scripts/report.sh
+      [... 87 more lines of /opt/scripts/report.sh ...]
+
+      $ uptime
+       09:51:34 up 14 days,  3:22,  1 user,  load average: 47.21, 38.94, 22.18
+    reveals: "92 copies of report.sh all running at once; load average 47 on a 4-core node. Script has no deduplication guard and is launched by cron every minute."
+
+  - id: cache_hit_rate
+    relevant_to: [cache_miss_db_pressure]
+    required_for: [cache_miss_db_pressure]
+    trigger_keywords: [cache, redis, hit rate, miss, memcached]
+    template: |
+      $ redis-cli -h {REDIS_HOST} info stats | grep -E "hit|miss"
+      keyspace_hits:1421
+      keyspace_misses:47891
+
+      # Hit rate: 2.9% (normal: ~96%)
+
+      $ redis-cli -h {REDIS_HOST} info keyspace
+      # Keyspace: (empty — 0 keys)
+    reveals: "Redis is empty — all 47891 requests are cache misses. Was the cache flushed?"
+
+  - id: jstat_gc
+    relevant_to: [jvm_gc_pressure]
+    required_for: [jvm_gc_pressure]
+    trigger_keywords: [jvm, gc, garbage collection, heap, jstat, java]
+    template: |
+      $ kubectl exec -it {POD} -n {NAMESPACE} -- jstat -gc {PID} 2000 5
+       S0C    S1C    S0U    S1U      EC       EU        OC         OU       MC     MU     YGC   YGCT    FGC   FGCT     GCT
+      512.0  512.0  0.0    512.0  4096.0  4089.1  {OLD_CAP}.0  {OLD_USE}.0  256.0  241.8  8912  89.12   247   73.21  162.33
+      512.0  512.0  512.0  0.0   4096.0   891.2   {OLD_CAP}.0  {OLD_USE}.0  256.0  241.8  8913  89.13   248   73.84  162.97
+      512.0  512.0  0.0    512.0  4096.0  4091.0  {OLD_CAP}.0  {OLD_USE}.0  256.0  241.8  8914  89.14   249   74.48  163.62
+    per_root_cause:
+      jvm_gc_pressure:
+        values: {OLD_CAP: "8192", OLD_USE: "8181"}
+        reveals: "Old gen (OC/OU) at 8181/8192 — 99.9% full. Full GC (FGC) at 249 and rising every 2 seconds. GC overhead is consuming 40%+ of CPU."
+
+red_herring_pool:
+  - id: network_normal
+    trigger_keywords: [network, connectivity, latency, ping, bandwidth]
+    template: |
+      $ kubectl exec -it {POD} -n {NAMESPACE} -- ping {DB_HOST} -c 3
+      PING {DB_HOST}: 56 data bytes
+      64 bytes from {DB_IP}: icmp_seq=0 ttl=62 time=0.4 ms
+      64 bytes from {DB_IP}: icmp_seq=1 ttl=62 time=0.3 ms
+    note: "Network latency is fine — this is not a connectivity issue"
+
+  - id: disk_normal
+    trigger_keywords: [disk, iops, storage, df, space]
+    template: |
+      $ df -h
+      Filesystem     Size  Used Avail Use% Mounted on
+      /dev/sda1       40G   14G   24G  37% /
+      /dev/sdb        80G   28G   48G  37% /var
+    note: "Disk space is normal — not a storage issue"
+
+  - id: recent_deploy_same_image
+    trigger_keywords: [deploy, deployment, rollout, version, image]
+    template: |
+      $ kubectl rollout history deployment/{SERVICE} -n {NAMESPACE}
+      REVISION  CHANGE-CAUSE
+      14        image update to v2.4.1 (3 days ago)
+      15        config update (5 hours ago)
+    note: "Last image update was 3 days ago — the config change 5 hours ago didn't change the image"
+
+turn_budget_templates:
+  "3": "[Slack · #incidents] @oncall {STAKEHOLDER} is escalating — {SERVICE} is impacting users. What's the status?"
+  "6": "[Slack · #incidents] @oncall I'm looking at {DIAGNOSTIC_AREA} — something looks off there."
+  "9": "[Slack · #incidents] @oncall I think it might be {DIRECTIONAL_HINT}."
+  "12": "[Slack · #incidents] @oncall Pretty sure it's {ROOT_CAUSE_SUMMARY}. Fix: {FIX_SUMMARY}"
+
+per_root_cause_turn_budget:
+  memory_leak:
+    STAKEHOLDER: "the on-call manager"
+    DIAGNOSTIC_AREA: "the memory trend — Grafana shows it's been growing all day"
+    DIRECTIONAL_HINT: "a memory leak — memory has grown by 1.1Gi since this morning with no traffic spike"
+    ROOT_CAUSE_SUMMARY: "memory leak in {SERVICE} — growing ~110Mi/hr for 12 hours"
+    FIX_SUMMARY: "restart pods as mitigation now; take a heap dump before restart for root cause analysis"
+  cpu_throttling_from_limits:
+    STAKEHOLDER: "the product team"
+    DIAGNOSTIC_AREA: "CPU throttling metrics — container_cpu_cfs_throttled_seconds_total is very high"
+    DIRECTIONAL_HINT: "CPU limits — app appears slow but node CPU is fine. Might be CFS throttling."
+    ROOT_CAUSE_SUMMARY: "CPU limit (400m) is too low — container is throttled 84% of the time"
+    FIX_SUMMARY: "increase limits.cpu in the deployment to 1000m or remove the limit"
+  fork_bomb_runaway_process:
+    STAKEHOLDER: "on-call leadership"
+    DIAGNOSTIC_AREA: "load average — it's at 47 on a 4-core node, something is spawning processes"
+    DIRECTIONAL_HINT: "a runaway script — load average this high usually means process count explosion"
+    ROOT_CAUSE_SUMMARY: "report.sh is being spawned by cron every minute with no dedup — 92 copies running simultaneously"
+    FIX_SUMMARY: "kill all copies of report.sh now; disable the cron job; add a lockfile guard to the script"
+  cache_miss_db_pressure:
+    STAKEHOLDER: "the DBA"
+    DIAGNOSTIC_AREA: "Redis — cache hit rate is near zero and the keyspace is empty"
+    DIRECTIONAL_HINT: "the Redis cache — it looks like it might have been flushed"
+    ROOT_CAUSE_SUMMARY: "Redis cache is empty (flushed during maintenance); all requests hitting DB cold"
+    FIX_SUMMARY: "warm the cache by pre-populating critical keys; DB CPU will normalize within 5 minutes"
+  jvm_gc_pressure:
+    STAKEHOLDER: "the Java team"
+    DIAGNOSTIC_AREA: "JVM metrics — GC frequency looks very high in the Java monitoring"
+    DIRECTIONAL_HINT: "JVM heap pressure — old gen might be nearly full causing frequent full GC"
+    ROOT_CAUSE_SUMMARY: "JVM old gen at 99.9% full — full GC running every 2 seconds consuming 40%+ CPU"
+    FIX_SUMMARY: "increase -Xmx to give more heap space; restart the pod to clear the immediate GC storm"
+
+generation_instructions: |
+  To generate an incident from this template:
+
+  1. Select one root_cause.
+  2. Include all required clues for that root cause plus 1 additional relevant clue.
+  3. Include 2 red herrings.
+  4. Opening message: service name, current CPU or memory metric, duration of issue, observable impact
+     (slow responses, timeouts, OOMKills). No root cause in the opening.
+  5. Fill turn_budget from templates + per_root_cause values.
+
+  Opening format:
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  {TIME} UTC
+    Service: {SERVICE_NAME}
+    Impact: {OBSERVABLE_IMPACT}
+    Duration: {DURATION} minutes
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  {2-3 sentences of observable symptoms. End with: "Where do you start?"}
