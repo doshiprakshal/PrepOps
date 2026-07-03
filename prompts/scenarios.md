@@ -36,18 +36,23 @@ First, check the `../incidents/{domain}/` directory for a file matching the topi
 | Networking | `../incidents/networking/` |
 | SRE | `../incidents/sre/` |
 
-Available incidents by domain:
-- `../incidents/kubernetes/mtu-mismatch.yaml` — networking, senior difficulty
-- `../incidents/kubernetes/oom-kill-cascade.yaml` — resources, intermediate difficulty
-- `../incidents/linux/disk-full-open-handles.yaml` — filesystems, senior difficulty
-- `../incidents/networking/dns-blackhole.yaml` — DNS/NetworkPolicy, intermediate difficulty
-- `../incidents/sre/cascading-retry-storm.yaml` — retry amplification, senior difficulty
+To find available incidents: scan `../incidents/{domain}/` for YAML files matching the topic and
+difficulty. Do not rely on a hardcoded list — new incidents are added by contributors over time.
 
-If a matching file exists: read it. Use its `opening_message`, `clues`, `red_herrings`, `turn_budget`, and `resolution_sequence` fields directly. The file IS the incident — don't generate a new one.
+**Selection logic (already defined in SKILL.md — repeated here for reference):**
+1. Check `../incidents/{domain}/` for a specific YAML file matching the topic. If found, use it.
+2. If no specific file matches: load `../incident-templates/{type}.yaml` for the symptom class,
+   follow its `generation_instructions` to select a root cause and build a unique incident.
+3. If no template matches: generate an incident from the knowledge file's `scenario_seeds`.
 
-If no file matches the topic/difficulty: generate a realistic incident using the `scenario_seed` from the knowledge file, or create one from your own knowledge. Structure it with the same components (root_cause, clue_map, red_herrings, turn_budget).
+If loading a specific incident file: use its `opening_message`, `clues`, `red_herrings`,
+`turn_budget`, and `resolution_sequence` fields directly. The file IS the incident.
 
-**Contributors: add new incidents by creating `../incidents/{domain}/{id}.yaml` using the schema in any existing incident file.**
+If generating from a template: follow the template's `generation_instructions` exactly —
+select one root cause, include required clues, pick 2 red herrings, fill placeholders.
+
+**Contributors: add incidents in `../incidents/{domain}/{id}.yaml` (specific) or
+`../incident-templates/{type}.yaml` (reusable patterns with multiple root causes).**
 
 Set up the incident context internally, then open with:
 
@@ -259,44 +264,6 @@ After resolution (or after turn budget exhausted), generate:
   STUDY RECOMMENDATION
   → {specific topic or debugging_command from the knowledge file to review}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
----
-
-## Example Incident: MTU Mismatch (Kubernetes Networking · Senior)
-
-**Internal setup (never shown):**
-```
-ROOT_CAUSE: Node node-03 has MTU set to 1500; cluster overlay (VXLAN) needs 1450.
-            Packets larger than 1450 bytes are silently dropped.
-            Only large payloads (images, bulk data) fail. Small requests work fine.
-
-CLUE_1: ping to node-03 works fine for small packets (icmp_seq shows normal)
-CLUE_2: ping with large payload (-s 1400) shows packet loss intermittently  
-CLUE_3: ip link show on node-03 shows MTU 1500 vs 1450 on all other nodes
-
-RED_HERRING_1: pod restart on unrelated namespace (happened 20min ago, log rotation)
-RED_HERRING_2: CPU spike on node-02 (unrelated batch job that started at incident time)
-```
-
-**Opening shown to user:**
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  🚨  INCIDENT  ·  14:32 UTC
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Service:  image-upload-service
-  Impact:   ~30% of image uploads failing with connection reset
-  SLO:      Burning at 3x rate
-  Tickets:  47 customer support tickets in the last 20 minutes
-  Duration: 0 minutes
-
-  Error rate spiked 12 minutes ago. Small files upload fine.
-  Files over ~1MB fail consistently. CPU, memory, and pod health
-  all appear normal. No recent deployments.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Where do you start?
 ```
 
 ---

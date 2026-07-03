@@ -285,12 +285,9 @@ If you don't have enough signal for a field, say "Insufficient signal — sessio
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
-**Star rating guide:**
-- ★★★★★ Exceptional — volunteered advanced concepts unprompted; showed depth beyond the question
-- ★★★★☆ Strong — covered all key points; minor gaps that didn't affect the overall signal
-- ★★★☆☆ Adequate — understood the basics; missed depth expected at this level
-- ★★☆☆☆ Developing — foundational gaps; needed significant prompting to get to the right answer
-- ★☆☆☆☆ Significant gaps — major misconceptions or inability to engage with the core concept
+**Star ratings:** Read `../../rubrics/dimensions.yaml` — the `star_guide` fields under each
+dimension define exactly what each ★ rating means. Apply those criteria when scoring.
+The hire signal threshold for each verdict is in `../../rubrics/hiring-signals.yaml`.
 
 ---
 

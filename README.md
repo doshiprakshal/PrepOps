@@ -354,6 +354,9 @@ Python CLI · session persistence · progress tracking · cross-session weak are
 ### Phase 4
 Web UI · interview history dashboard · readiness score · shareable reports
 
+### Phase 5
+Standalone prompt distribution (paste into any Claude conversation — no install required) · single-command curl installer · multi-provider support
+
 ---
 
 ## License

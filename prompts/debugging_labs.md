@@ -69,119 +69,40 @@ Show the corrected artifact. Explain the bug, the fix, and why it matters in pro
 
 ---
 
-## Lab Catalog by Topic
+## Lab Generation from the Knowledge File
 
-**Kubernetes:**
+All lab content is generated fresh from the loaded knowledge file. Do not use static examples.
 
-Pod stuck Pending (wrong nodeSelector / resource request too high):
-```yaml
-# Context: Pod never schedules — stuck in Pending indefinitely
-apiVersion: v1
-kind: Pod
-spec:
-  nodeSelector:
-    disk: ssd          # no nodes have this label
-  containers:
-  - name: app
-    image: nginx
-    resources:
-      requests:
-        memory: "64Gi"  # larger than any node's allocatable memory
-```
+**Source fields and what they produce:**
 
-Service with no Endpoints (selector mismatch):
-```yaml
-# Context: curl to Service ClusterIP returns 'connection refused'
-apiVersion: v1
-kind: Service
-metadata:
-  name: api
-spec:
-  selector:
-    app: api        # pods are labeled 'App: api' (capital A)
-  ports:
-  - port: 80
-    targetPort: 8080
----
-apiVersion: apps/v1
-kind: Deployment
-spec:
-  selector:
-    matchLabels:
-      App: api      # capital A — won't match Service selector
-  template:
-    metadata:
-      labels:
-        App: api
-```
+**`interview_angles` where `angle: "Debugging"`**
+Each entry's `prompt` describes a realistic failure. Convert it to a lab:
+- Context: use the scenario described in the prompt
+- Artifact: create a broken config, output, or snippet that would produce that failure
+- The bug must correspond to something in `common_misconceptions` or `key_concepts`
 
-RBAC blocking a ServiceAccount:
-```yaml
-# Context: pod logs show 'forbidden: User "system:serviceaccount:default:app-sa"
-# cannot list resource "pods" in API group "" in the namespace "default"'
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: pod-reader
-rules:
-- apiGroups: [""]
-  resources: ["pod"]   # should be "pods" (plural)
-  verbs: ["get", "watch"]  # missing "list"
-```
+**`common_misconceptions`**
+Each misconception encodes a broken mental model that manifests as a broken config.
+Convert it: "make a config that someone would write if they believed this misconception."
+Example: misconception "selector match is case-insensitive" → Service with `app: Api` selecting pods labeled `app: api`.
 
-**Terraform:**
+**`debugging_commands`**
+Convert each command to a "command card" lab:
+- Context: "You need to {purpose}. The system shows {relevant symptom}."
+- Artifact: show partial output from the WRONG command the user might reach for
+- Ask: what command do you actually run and what does it tell you?
 
-State lock left by crashed apply:
-```
-# Context: terraform apply fails immediately:
-# Error acquiring the state lock:
-#   Lock Info:
-#     ID:        abc123-def456-789
-#     Operation: OperationTypeApply
-#     Who:       engineer@laptop
-#     Created:   2026-06-28 09:15:43
-#
-# The previous apply ran 3 hours ago and the engineer's laptop crashed mid-run.
+**`scenario_seeds`**
+Each seed's `setup` describes observable symptoms. Convert to a lab:
+- Context: use the setup verbatim as the observable failure
+- Artifact: construct a broken config or log output that would produce those symptoms
+- The hint field is your answer key — never show it until Level 3
 
-# What do you do? (Don't just say force-unlock — what do you verify first?)
-```
-
-**Linux:**
-
-systemd service failing to start:
-```ini
-# Context: systemctl start myapp fails.
-# journalctl shows: "myapp.service: Main process exited, code=exited, status=203/EXEC"
-[Unit]
-Description=My Application
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/opt/app/myapp    # binary doesn't exist here; it's at /opt/myapp/bin/app
-Restart=on-failure
-User=appuser                # this user doesn't exist on the system
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**PromQL:**
-
-Alert that never fires:
-```yaml
-# Context: This alert should fire when error rate > 5% for 5 minutes.
-# It never fires even during incidents where errors are visible in logs.
-- alert: HighErrorRate
-  expr: |
-    rate(http_requests_total{status="error"}[5m])
-    /
-    rate(http_requests_total[5m])
-    > 0.05
-  for: 5m
-# The actual metric name is http_server_requests_total, not http_requests_total.
-# Alert expression returns "no data" which evaluates as false, not pending.
-```
+**Priority order for lab selection:**
+1. Rotate through all `interview_angles[Debugging]` entries first
+2. Then derive labs from `common_misconceptions` (most impactful for interview prep)
+3. Then use `debugging_commands` for command-card labs
+4. Then use `scenario_seeds` for artifact-based labs
 
 ---
 
