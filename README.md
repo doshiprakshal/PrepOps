@@ -256,7 +256,16 @@ Google SRE · Amazon DevOps · Netflix SRE · Stripe Engineering · Startup DevO
 
 ## Install
 
-**Register the marketplace** (one time):
+**Step 1 — Register the marketplace** (one time, requires Node.js):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/doshiprakshal/PrepOps/main/install.sh | bash
+```
+
+This registers the marketplace source and prints the next step.
+
+<details>
+<summary>No curl? Run the node script directly</summary>
 
 ```bash
 node << 'SCRIPT'
@@ -272,13 +281,15 @@ SCRIPT
 
 > The `node -e "..."` form fails in zsh because `!` inside double quotes triggers history expansion. The heredoc form above works in both bash and zsh.
 
-**Install PrepOps:**
+</details>
+
+**Step 2 — Install PrepOps** (inside Claude Code):
 
 ```
 /plugin install prepops@doshiprakshal
 ```
 
-**Start a session:**
+**Step 3 — Start a session:**
 
 ```
 /interview-coach
