@@ -1,0 +1,28 @@
+name: Update marketplace SHA
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  update-sha:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update prepops SHA in claude-skills marketplace
+        env:
+          GH_TOKEN: ${{ secrets.SKILLS_MARKETPLACE_PAT }}
+          NEW_SHA: ${{ github.sha }}
+        run: |
+          git clone https://x-access-token:${GH_TOKEN}@github.com/doshiprakshal/claude-skills.git
+          cd claude-skills
+
+          jq --arg sha "$NEW_SHA" \
+            '(.plugins[] | select(.name == "prepops") | .source.sha) = $sha' \
+            .claude-plugin/marketplace.json > tmp.json && mv tmp.json .claude-plugin/marketplace.json
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .claude-plugin/marketplace.json
+          git diff --cached --quiet && echo "SHA unchanged, skipping commit" && exit 0
+          git commit -m "Update prepops SHA to ${NEW_SHA:0:7}"
+          git push
