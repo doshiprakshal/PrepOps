@@ -1,0 +1,15 @@
+# Default owner for everything
+* @doshiprakshal
+
+# Core content layers
+/blueprints/   @doshiprakshal
+/incidents/    @doshiprakshal
+/incident-templates/ @doshiprakshal
+/knowledge/    @doshiprakshal
+/personas/     @doshiprakshal
+/prompts/      @doshiprakshal
+/rubrics/      @doshiprakshal
+
+# Skill entry point and schema
+/skills/       @doshiprakshal
+/docs/         @doshiprakshal
