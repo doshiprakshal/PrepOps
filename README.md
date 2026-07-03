@@ -269,17 +269,24 @@ This registers the marketplace source and prints the next step.
 
 ```bash
 node << 'SCRIPT'
-const fs = require('fs'), path = require('path');
-const f = path.join(require('os').homedir(), '.claude', 'known_marketplaces.json');
-const d = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f)) : { marketplaces: [] };
-if (!d.marketplaces.find(m => m.name === 'doshiprakshal'))
-  d.marketplaces.push({ name: 'doshiprakshal', url: 'https://raw.githubusercontent.com/doshiprakshal/claude-skills/main/.claude-plugin/marketplace.json' });
-fs.writeFileSync(f, JSON.stringify(d, null, 2));
-console.log('Registered doshiprakshal marketplace');
+const fs = require('fs'), path = require('path'), os = require('os');
+const f = path.join(os.homedir(), '.claude', 'plugins', 'known_marketplaces.json');
+const dir = path.dirname(f);
+if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+const d = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {};
+if (!d['doshiprakshal']) {
+  d['doshiprakshal'] = {
+    source: { source: 'github', repo: 'doshiprakshal/claude-skills' },
+    installLocation: path.join(os.homedir(), '.claude', 'plugins', 'marketplaces', 'doshiprakshal'),
+    lastUpdated: new Date().toISOString()
+  };
+  fs.writeFileSync(f, JSON.stringify(d, null, 2));
+  console.log('Registered doshiprakshal marketplace');
+} else {
+  console.log('Already registered — skipping.');
+}
 SCRIPT
 ```
-
-> The `node -e "..."` form fails in zsh because `!` inside double quotes triggers history expansion. The heredoc form above works in both bash and zsh.
 
 </details>
 
