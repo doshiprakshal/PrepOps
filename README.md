@@ -4,6 +4,8 @@ AI-powered interview simulator for SRE, DevOps, Cloud, Platform Engineering, and
 
 PrepOps helps engineers prepare through adaptive concept coaching, production incident simulations, company-style mock interviews, and structured hiring-style feedback.
 
+https://github.com/user-attachments/assets/4c5cb690-3a1f-41ab-b358-8b3b612ccf7b
+
 ---
 
 ## Why PrepOps Exists
