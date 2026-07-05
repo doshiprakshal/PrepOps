@@ -225,7 +225,7 @@ Read the appropriate file and follow its instructions for the rest of the sessio
 | Production incidents | `incidents/{domain}/{id}.yaml` | Production Scenarios mode (specific) |
 | Incident templates | `incident-templates/{type}.yaml` | Production Scenarios mode (generated) |
 | Scoring rubrics | `rubrics/dimensions.yaml`, `rubrics/hiring-signals.yaml` | End-of-session report |
-| Company blueprints | `blueprints/{company}/{role}/{level}.yaml` | Blueprint-driven sessions |
+| Engine templates | `templates/interview_blueprint.yaml`, `templates/knowledge_mapping.yaml` | Blueprint generation (schema only — blueprints are generated in memory, never read from files) |
 | Topic knowledge | `knowledge/{domain}/{topic}.yaml` | All modes |
 
 **Incident selection for Production Scenarios mode:**
