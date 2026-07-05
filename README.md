@@ -17,7 +17,7 @@ PrepOps is different.
 It combines:
 
 - Structured infrastructure knowledge
-- Company/role interview blueprints
+- Dynamic interview blueprints generated from your JD
 - Interviewer personas
 - Production incident simulations
 - Adaptive questioning
@@ -39,6 +39,7 @@ The goal is to help engineers think, debug, communicate, and reason like strong 
 | Memorization-focused | Reasoning-focused |
 | No hiring signal | Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire |
 | No replay value | Blueprint + persona + incident composition |
+| Static company prep | Dynamic blueprint from your actual JD |
 
 ---
 
@@ -53,11 +54,11 @@ Blueprint → Persona → Incident → Knowledge → Rubric
 ### Blueprint
 
 Defines company, role, level, topic weights, expected depth, and hiring bar.
+Generated dynamically at session start from a job description + web research.
+Exists only in memory — never committed to the repository.
 
 ```
-blueprints/google/sre/ic3.yaml
-blueprints/amazon/devops/l5.yaml
-blueprints/netflix/platform/staff.yaml
+templates/interview_blueprint.yaml   ← schema (engine only)
 ```
 
 ### Persona
@@ -99,7 +100,8 @@ rubrics/dimensions.yaml
 rubrics/hiring-signals.yaml
 ```
 
-Each layer can be improved independently. A contributor can add a new incident without touching any other file.
+The engine (Blueprint, prompts, templates) is maintained by the project owners.
+Community contributors expand the domain assets: Knowledge, Incidents, Personas, and Rubrics.
 
 ---
 
@@ -115,21 +117,20 @@ Each layer can be improved independently. A contributor can add a new incident w
 - System design sessions with adversarial review phase
 - Rapid-fire question sets
 - Mixed-mode sessions
-- Company/role/level interview blueprints
-- Hiring-style end-of-session reports
+- JD-driven dynamic blueprint generation with mandatory web research
+- Hiring-style end-of-session reports with JD readiness section
 
 ---
 
-## Example: Google SRE IC3 Mock Interview
+## Example: Google SRE IC4 Mock Interview from a JD
 
 ```
 /interview-coach
 
-Blueprint: Google SRE IC3
-Mode: Mock Interview
+[paste Google SRE IC4 job description]
 ```
 
-The session loads `blueprints/google/sre/ic3.yaml`, selects the Google SRE persona, and calibrates topic weights (30% coding, 25% Linux, 20% troubleshooting) against the IC3 hiring bar. At the end, the verdict is framed against what Google actually looks for at that level — not a generic rubric.
+The engine extracts required skills, runs web research on Google SRE interviews, and generates a session blueprint in memory — calibrating topic weights (hypothesis-driven style, 30% troubleshooting, 20% Linux, 15% Kubernetes...) against what Google actually tests at IC4. At the end, the readiness report shows which JD requirements were demonstrated and which still need practice.
 
 ---
 
@@ -233,15 +234,6 @@ PrepOps/
 - Networking (DNS, TCP, load balancing)
 - SRE (SLOs/error budgets, incident response, reliability patterns)
 
-### Blueprints
-
-- Google SRE — IC3, IC4, IC5
-- Amazon DevOps — L5
-- Apple SRE — ICT4
-- Netflix Platform — Staff
-- Stripe Infrastructure — Senior
-- Startup DevOps — Senior
-
 ### Incidents
 
 - Kubernetes MTU mismatch (networking, senior)
@@ -310,53 +302,18 @@ SCRIPT
 
 PrepOps is designed to be community-driven.
 
-Each layer is independently contributable. You can add a new incident without touching the coach logic. You can add a new company blueprint without touching knowledge files.
+The engine is maintained by the project owners. The community expands the four domain asset types:
 
-**What you can contribute:**
+| Contribute | Path | What it adds |
+|---|---|---|
+| Knowledge | `knowledge/{domain}/{topic}.yaml` | Curriculum for a new topic |
+| Incidents | `incidents/{domain}/{name}.yaml` | A new on-call scenario |
+| Personas | `personas/{id}.yaml` | A new interviewer style |
+| Rubrics | `rubrics/` | New scoring dimensions |
 
-- New knowledge domain files
-- New production incidents
-- New company/role/level blueprints
-- New interviewer personas
-- New scoring rubrics
-- Example interview transcripts
+Good contributions are specific, realistic, and production-grounded — not definitions or trivia.
 
-### Add a Knowledge File
-
-```
-knowledge/{domain}/{topic}.yaml
-```
-
-Follow the schema in `schema/knowledge.schema.yaml`.
-
-### Add an Incident
-
-```
-incidents/{domain}/{incident-name}.yaml
-```
-
-Copy the structure from any existing incident file. The fields `opening_message`, `clues`, `red_herrings`, `turn_budget`, and `resolution_sequence` are required.
-
-### Add a Blueprint
-
-```
-blueprints/{company}/{role}/{level}.yaml
-```
-
-Example: `blueprints/datadog/sre/senior.yaml`
-
-Copy the structure from any existing blueprint. The fields `topic_weights`, `expected_depth`, `hiring_bar`, `common_mistakes`, and `persona` are required.
-
-### Quality Bar
-
-Good contributions are:
-
-- Realistic — based on how production systems actually fail or how these companies actually interview
-- Specific — named commands, real error messages, actual symptoms
-- Scenario-driven — not trivia, not definitions
-- Interview-relevant — maps to what SRE, DevOps, Cloud, or Platform Engineering roles actually test
-
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the full guide.
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for schemas, quality bar, and branch conventions.
 
 ---
 

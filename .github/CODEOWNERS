@@ -1,15 +1,22 @@
-# Default owner for everything
-* @doshiprakshal
+# ─── ENGINE — MAINTAINERS ONLY ────────────────────────────────────────────────
+# The engine is the behavioral contract of PrepOps.
+# Changes here affect how every session runs.
+# Community contributions to these paths will not be accepted.
 
-# Core content layers
-/blueprints/   @doshiprakshal
+* @doshiprakshal
+/prompts/      @doshiprakshal
+/skills/       @doshiprakshal
+/templates/    @doshiprakshal
+/schema/       @doshiprakshal
+/docs/         @doshiprakshal
+
+# ─── DOMAIN ASSETS — COMMUNITY CONTRIBUTIONS WELCOME ──────────────────────────
+# These four directories are the expansion surface for PrepOps.
+# Add new topics, incidents, personas, or rubric dimensions here.
+# See docs/CONTRIBUTING.md for schemas and quality bar.
+
+/knowledge/    @doshiprakshal
 /incidents/    @doshiprakshal
 /incident-templates/ @doshiprakshal
-/knowledge/    @doshiprakshal
 /personas/     @doshiprakshal
-/prompts/      @doshiprakshal
 /rubrics/      @doshiprakshal
-
-# Skill entry point and schema
-/skills/       @doshiprakshal
-/docs/         @doshiprakshal
