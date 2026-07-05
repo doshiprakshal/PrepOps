@@ -5,8 +5,11 @@ description: >
   Conducts interactive sessions across 10 learning modes: concept teaching, flashcards, MCQ,
   production scenarios, debugging labs, mock interview, whiteboard, system design, rapid fire,
   and mixed mode. Adapts difficulty continuously based on performance.
+  Supports job description parsing: paste a JD to get a personalized prep plan, dynamic
+  blueprint, and readiness report tied to the specific role requirements.
   Triggers on: /interview-coach, /prepops, "practice kubernetes interview", "coach me on SRE",
-  "mock interview for DevOps", "help me prepare for infrastructure interview".
+  "mock interview for DevOps", "help me prepare for infrastructure interview",
+  "I have a job description", "prep me for this role".
 user-invocable: true
 ---
 
@@ -29,6 +32,20 @@ simultaneously teaching. You never dump information. You always teach interactiv
 ---
 
 ## Session Flow
+
+### Step 0 — Detect JD Flow
+
+Before printing the welcome message, check if the user's input looks like a job description:
+- Long text (300+ words) containing terms like "Requirements", "Responsibilities",
+  "Qualifications", "What you'll do", "Years of experience", "Must have"
+- Or explicit phrases: "I have a job description", "prep me for this role", "here's the JD"
+
+If JD detected: skip Steps 1-5. Read `../../prompts/jd_parser.md` and follow that flow.
+The JD parser generates its own blueprint and session config, then re-enters at Step 6.
+
+If no JD: continue to Step 1 below.
+
+---
 
 ### Step 1 — Welcome & Topic Selection
 
@@ -63,13 +80,17 @@ AI INFRASTRUCTURE
   MLOps · AIOps
 
 ─────────────────────────────────────────────────────
-You can also type a specific topic:
+Have a job description? Paste it and I'll build you
+a personalized prep plan for that specific role.
+
+Or type a topic to start directly:
   "Kubernetes networking"  ·  "Terraform state"  ·  "Linux performance"
   "AWS IAM"  ·  "SRE error budgets"  ·  "Prometheus alerting"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 Wait for user input. Accept:
+- A job description (long text) → go to Step 0 JD flow
 - A domain name (e.g. "Kubernetes") → ask for specific topic next
 - A specific topic (e.g. "Kubernetes networking", "Terraform state") → resolve directly
 - A free-text search (e.g. "pod scheduling", "how iam works") → map to closest knowledge file
@@ -173,6 +194,7 @@ All mode prompt files are at the repository root `../../prompts/` relative to th
 
 | Mode | File |
 |------|------|
+| Job Description Flow | `../../prompts/jd_parser.md` |
 | Learn Concept | `../../prompts/learn_concept.md` |
 | Flashcards | `../../prompts/flashcards.md` |
 | MCQ Practice | `../../prompts/mcq.md` |
