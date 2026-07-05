@@ -14,9 +14,8 @@ Before proceeding, ask once:
 ```
 Got it. Do you have a resume you'd like to add?
 
-Paste it here for a personalized gap analysis — PrepOps will map your
-background against this role's requirements and tell you exactly where
-you're weak.
+Paste it here and PrepOps will use it to prioritize your prep sessions
+around the skills you haven't demonstrated yet.
 
 Or press Enter to skip.
 ```
@@ -33,6 +32,15 @@ resume_level_signal:    # junior | mid | senior | staff inferred from experience
 ```
 
 If they skip, set `has_resume: false` and continue.
+
+**Resume scope constraint — never cross these lines:**
+- Do NOT score the resume overall. Do NOT say "your resume is weak/strong."
+- Do NOT give resume writing advice, formatting tips, or ATS optimization suggestions.
+- Do NOT suggest what to add, remove, or reword in the resume.
+- The resume is read-only context. The only question it answers is:
+  "Which topics should we prioritize in PrepOps sessions?"
+- All resume-derived output must frame gaps as interview preparation targets,
+  not as resume deficiencies. The goal is what to *demonstrate*, not what to *fix*.
 
 ---
 
@@ -183,19 +191,19 @@ Keep it scannable. One line per insight. No multi-line "Why:" paragraphs.
   ──────────────────────────────────────────────────────
 
   [ONLY SHOW IF has_resume: true]
-  YOUR GAPS  ·  resume vs this role
+  PREP FOCUS  ·  based on your background
 
-  Required skills:
-  ✓  {skill}  ·  {skill}  ·  {skill}
-  ⚠  {skill} — limited depth
-  ✗  {skill} — no evidence
+  Skills to demonstrate in the interview:
+  ✓  {skill}  ·  {skill}  — you have this, be ready to go deep
+  ⚠  {skill} — practice this, your depth here isn't clear yet
+  ✗  {skill} — no prior signal, prioritize in PrepOps sessions
 
-  Missing work signals:
-  ✗  On-call / incident response
-  ✗  SLO ownership
-  ✗  {other signal from responsibilities}
+  Signals this role tests that your sessions should cover:
+  →  On-call decision-making
+  →  SLO design and error budget trade-offs
+  →  {other signal from responsibilities}
 
-  Focus here first — these are the gaps that will cost you the offer.
+  Sessions below are ordered to cover your weakest areas first.
 
   ──────────────────────────────────────────────────────
 
