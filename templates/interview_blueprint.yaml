@@ -1,0 +1,89 @@
+# PrepOps — Interview Blueprint Template
+#
+# This file defines the SCHEMA for a session blueprint.
+# Blueprints are generated at runtime and exist only in memory — never committed.
+# The engine fills every field using JD extraction + mandatory web research.
+
+# ─── IDENTITY ─────────────────────────────────────────────────────────────────
+
+company: ""           # Extracted from JD or user input
+role: ""              # Exact role title from JD
+level: ""             # junior | mid | senior | staff | principal
+                      # Map company-specific levels: IC3→mid, IC4→senior, IC5→staff, etc.
+
+# ─── INTERVIEW STYLE ──────────────────────────────────────────────────────────
+
+interview_style: ""
+# Options — select based on web research into company culture:
+#   hypothesis_driven     — expect structured reasoning before any command (Google SRE style)
+#   scenario_based        — production incidents and system failures (Netflix, SRE-heavy)
+#   lp_driven             — leadership principles embedded in every question (Amazon)
+#   correctness_focused   — edge cases, idempotency, exact failure behavior (Stripe)
+#   breadth_first         — wide coverage across many topics (startups, platform roles)
+
+# ─── QUESTION DISTRIBUTION ────────────────────────────────────────────────────
+
+# Weights must sum to 100.
+# Topic slugs must exist in templates/knowledge_mapping.yaml.
+# Derived from: JD skill frequency (required skills count 2x) + web research emphasis.
+question_distribution: {}
+# Example after generation:
+#   troubleshooting: 30
+#   linux: 20
+#   networking: 15
+#   kubernetes: 15
+#   coding: 10
+#   behavioral: 10
+
+# ─── DIFFICULTY PER TOPIC ─────────────────────────────────────────────────────
+
+# Per-topic difficulty override. Default is the level field above.
+# Use this when a role requires unusually deep or shallow knowledge in a specific area.
+difficulty: {}
+# Example:
+#   troubleshooting: senior
+#   kubernetes: senior
+#   networking: intermediate
+#   behavioral: mid
+
+# ─── PERSONA ──────────────────────────────────────────────────────────────────
+
+# Selected based on company interview culture signals from web research.
+# Must match a file in personas/
+preferred_persona: ""
+# Options:
+#   google_sre | amazon_devops | netflix_sre | stripe_engineering |
+#   startup_devops | staff_engineer | principal_engineer |
+#   friendly_mentor | strict_bar_raiser
+
+# ─── INCIDENT FOCUS ───────────────────────────────────────────────────────────
+
+# Top 1-2 domains for production scenario selection or on-the-fly generation.
+# Derived from the highest-weighted topics in question_distribution.
+incident_focus: []
+# Example: [kubernetes, networking]
+
+# ─── EVALUATION FOCUS ─────────────────────────────────────────────────────────
+
+# Rubric dimensions to emphasize for this role.
+# These dimensions are weighted 1.5x when computing the hire signal.
+# Must be dimension IDs from rubrics/dimensions.yaml.
+evaluation_focus: []
+# Example: [production_thinking, communication]
+# Dimensions: technical_knowledge | production_thinking | debugging_methodology |
+#             communication | depth
+
+# ─── HIRING BAR ───────────────────────────────────────────────────────────────
+
+# What "hire" looks like at this company + level.
+# Derived from web research. If uncertain, note it explicitly.
+hiring_bar: ""
+# Example: "IC4 Google SRE: candidate must demonstrate SLO ownership, comfort with
+# ambiguity at scale, and systematic debugging under time pressure."
+
+# ─── KNOWLEDGE GAPS ───────────────────────────────────────────────────────────
+
+# Topics from the JD that have no PrepOps knowledge file (coverage: none in knowledge_mapping.yaml).
+# The engine flags these — general Claude knowledge is used for these topics.
+knowledge_gaps: []
+# Example: [docker, prometheus, cicd]

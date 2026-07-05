@@ -142,51 +142,60 @@ How would you like to learn?
   10. Mixed Mode           — I pick the best mix based on your weak areas
 ```
 
-### Step 5 — Blueprint Selection (optional, before mode)
+### Step 5 — Blueprint Generation (optional, before mode)
 
-If the user chose **Mock Interview** or **Production Scenarios**, or if they mentioned a target company/role, offer blueprint selection:
+Blueprints are always generated dynamically — never loaded from a static file.
+There are no company-specific blueprint files in this repository.
+
+If the user chose **Mock Interview** or **Production Scenarios**, or mentioned a target company/role, ask:
 
 ```
-Are you preparing for a specific company and role?
+Are you targeting a specific company and role?
 
 Type a company and level (e.g. "Google SRE IC4", "Amazon L5", "Netflix Staff")
-or press Enter to skip.
+or paste a job description for a fully personalized plan.
+Press Enter to skip and use a generic session.
 ```
 
-If they provide a target:
-1. Find the matching blueprint at `../../blueprints/{company}/{role}/{level}.yaml`
-2. Read it — it drives Steps 3, 6, and the report
-3. Set `difficulty` from `expected_depth` values in the blueprint
-4. In Step 6, use the blueprint's `topic_weights` to select questions and `persona` field to load the interviewer
-5. In Step 7, calibrate the hire signal against the blueprint's `hiring_bar`, not the generic rubric
+**If they provide a company/role or JD:**
+Load `../../prompts/jd_parser.md` and follow that flow.
+The JD parser runs web research, generates a session blueprint in memory,
+and re-enters here at Step 6 with the blueprint as session config.
 
-**Blueprint → Persona → Incident: how they combine**
+**If they skip:**
+Generate a minimal generic blueprint using `../../templates/interview_blueprint.yaml`:
+- question_distribution: equal weight across the selected topic
+- difficulty: from Step 3
+- preferred_persona: from Step 4 persona choice (if Mock Interview)
+- incident_focus: the selected topic domain
+- evaluation_focus: [technical_knowledge, production_thinking]
+
+**How the generated blueprint drives the session:**
 
 ```
-Blueprint (company/role/level)
-  ↓ topic_weights  → determines which topics to ask about and in what proportion
-  ↓ expected_depth → determines how deep to go per topic
-  ↓ persona        → loads ../../personas/{persona_id}.yaml for interviewer behavior
-  ↓ hiring_bar     → calibrates the end-of-session verdict
-  ↓ common_mistakes → shapes what gaps to watch for during the session
+Generated Blueprint (in memory only — never saved)
+  ↓ question_distribution → topic selection and weighting per phase
+  ↓ difficulty            → depth per topic
+  ↓ preferred_persona     → loads personas/{id}.yaml for interviewer behavior
+  ↓ hiring_bar            → calibrates the end-of-session verdict
+  ↓ evaluation_focus      → weights rubric dimensions
+  ↓ incident_focus        → drives production scenario selection/generation
 
-Persona (interviewer profile)
-  ↓ question_style  → shapes HOW questions are asked
-  ↓ followup_patterns → the actual follow-up templates to use
-  ↓ hints_policy    → whether and how to give hints
+Curriculum Resolution (via templates/knowledge_mapping.yaml)
+  ↓ topic slug → knowledge file path (if coverage: full)
+  ↓ topic slug → Claude's general knowledge (if coverage: none)
 
-Incidents (production scenarios)
-  ↓ for Production Scenarios mode, load from ../../incidents/{domain}/{id}.yaml
-  ↓ pick incident matching topic + difficulty level
-  ↓ use clues, red_herrings, and turn_budget from the incident file
+Incident Selection (via templates/incident_generation.yaml priority order)
+  ↓ 1. incidents/{domain}/ for matching handcrafted file
+  ↓ 2. incident-templates/ for matching reusable template
+  ↓ 3. Generate fresh incident using incident_generation.yaml rules
 
-Knowledge (topic content)
-  ↓ read from ../../knowledge/{domain}/{topic}.yaml
-  ↓ provides key_concepts, common_misconceptions, scenario_seeds, scoring_rubric
+Interview Flow (via templates/interview_flow.yaml)
+  ↓ phase structure, topic rotation, adaptive difficulty rules
+
+Scoring (via templates/evaluation_rubric.yaml)
+  ↓ dimension weights, evaluation_focus boost, hire signal calibration
 ```
-
-Without a blueprint: use generic difficulty/persona as set in Steps 3-4.
-With a blueprint: the blueprint overrides topic balance, depth, and report calibration.
 
 ### Step 6 — Load Mode Prompt
 

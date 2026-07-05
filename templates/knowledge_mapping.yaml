@@ -1,0 +1,201 @@
+# PrepOps — Knowledge Mapping
+#
+# Maps topic slugs (used in question_distribution) to PrepOps knowledge files.
+# The engine uses this to resolve topics → structured curriculum.
+# coverage: full  = structured knowledge file with misconceptions, scenarios, rubric
+# coverage: none  = no file; engine uses Claude's general knowledge (flagged in blueprint)
+
+# ─── KUBERNETES ───────────────────────────────────────────────────────────────
+
+kubernetes:
+  file: knowledge/kubernetes/pods.yaml
+  display: Kubernetes — Pods & Workloads
+  domain: kubernetes
+  coverage: full
+
+kubernetes_networking:
+  file: knowledge/kubernetes/networking.yaml
+  display: Kubernetes — Networking & CNI
+  domain: kubernetes
+  coverage: full
+
+kubernetes_services:
+  file: knowledge/kubernetes/services.yaml
+  display: Kubernetes — Services & DNS
+  domain: kubernetes
+  coverage: full
+
+helm:
+  file: null
+  display: Helm
+  domain: kubernetes
+  coverage: none
+
+# ─── LINUX ────────────────────────────────────────────────────────────────────
+
+linux:
+  file: knowledge/linux/processes.yaml
+  display: Linux — Processes & Systemd
+  domain: linux
+  coverage: full
+
+linux_performance:
+  file: knowledge/linux/performance.yaml
+  display: Linux — Performance & Profiling
+  domain: linux
+  coverage: full
+
+linux_filesystems:
+  file: knowledge/linux/filesystems.yaml
+  display: Linux — Filesystems & Storage
+  domain: linux
+  coverage: full
+
+# ─── TERRAFORM ────────────────────────────────────────────────────────────────
+
+terraform:
+  file: knowledge/terraform/state.yaml
+  display: Terraform — State & Backends
+  domain: terraform
+  coverage: full
+
+terraform_modules:
+  file: knowledge/terraform/modules.yaml
+  display: Terraform — Modules & Reuse
+  domain: terraform
+  coverage: full
+
+terraform_drift:
+  file: knowledge/terraform/drift.yaml
+  display: Terraform — Drift & Import
+  domain: terraform
+  coverage: full
+
+# ─── AWS ──────────────────────────────────────────────────────────────────────
+
+aws_iam:
+  file: knowledge/aws/iam.yaml
+  display: AWS — IAM & Permissions
+  domain: aws
+  coverage: full
+
+aws_autoscaling:
+  file: knowledge/aws/autoscaling.yaml
+  display: AWS — Auto Scaling
+  domain: aws
+  coverage: full
+
+aws_load_balancing:
+  file: knowledge/aws/load-balancing.yaml
+  display: AWS — Load Balancing
+  domain: aws
+  coverage: full
+
+gcp:
+  file: null
+  display: Google Cloud Platform
+  domain: cloud
+  coverage: none
+
+# ─── NETWORKING ───────────────────────────────────────────────────────────────
+
+networking_dns:
+  file: knowledge/networking/dns.yaml
+  display: Networking — DNS
+  domain: networking
+  coverage: full
+
+networking_tcp:
+  file: knowledge/networking/tcp.yaml
+  display: Networking — TCP & Tuning
+  domain: networking
+  coverage: full
+
+networking_load_balancing:
+  file: knowledge/networking/load-balancing.yaml
+  display: Networking — Load Balancing
+  domain: networking
+  coverage: full
+
+# ─── SRE ──────────────────────────────────────────────────────────────────────
+
+sre_slos:
+  file: knowledge/sre/slos-error-budgets.yaml
+  display: SRE — SLOs & Error Budgets
+  domain: sre
+  coverage: full
+
+sre_incident_response:
+  file: knowledge/sre/incident-response.yaml
+  display: SRE — Incident Response
+  domain: sre
+  coverage: full
+
+sre_reliability:
+  file: knowledge/sre/reliability-patterns.yaml
+  display: SRE — Reliability Patterns
+  domain: sre
+  coverage: full
+
+# ─── NO KNOWLEDGE FILE ────────────────────────────────────────────────────────
+# Engine uses Claude's general knowledge. Flagged in blueprint.knowledge_gaps.
+
+docker:
+  file: null
+  display: Docker & Containers
+  domain: containers
+  coverage: none
+
+prometheus:
+  file: null
+  display: Prometheus & Alerting
+  domain: observability
+  coverage: none
+
+grafana:
+  file: null
+  display: Grafana
+  domain: observability
+  coverage: none
+
+cicd:
+  file: null
+  display: CI/CD Pipelines
+  domain: engineering_practices
+  coverage: none
+
+platform_engineering:
+  file: null
+  display: Platform Engineering
+  domain: engineering_practices
+  coverage: none
+
+mlops:
+  file: null
+  display: MLOps
+  domain: ai_infrastructure
+  coverage: none
+
+aiops:
+  file: null
+  display: AIOps
+  domain: ai_infrastructure
+  coverage: none
+
+troubleshooting:
+  file: null
+  display: General Troubleshooting
+  domain: sre
+  coverage: none   # use incidents/ and incident-templates/ for this topic
+
+coding:
+  file: null
+  display: Coding & Scripting
+  domain: engineering_practices
+  coverage: none
+
+behavioral:
+  file: null
+  display: Behavioral / Leadership Principles
+  domain: soft_skills
+  coverage: none

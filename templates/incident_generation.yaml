@@ -1,0 +1,130 @@
+# PrepOps — Incident Generation Template
+#
+# Rules for generating a fresh production incident when no handcrafted file
+# or reusable template matches the required domain and difficulty.
+# Used by the engine during the production phase of any session.
+
+# ─── SELECTION PRIORITY ───────────────────────────────────────────────────────
+
+selection_order:
+  1: "Check incidents/{domain}/ for a file matching topic and difficulty"
+  2: "Check incident-templates/ for a template matching the symptom class"
+  3: "Generate fresh using the rules below"
+
+# ─── SYMPTOM CLASSES BY DOMAIN ────────────────────────────────────────────────
+
+symptom_classes:
+  kubernetes:
+    - pod stuck in Pending or CrashLoopBackOff
+    - service returning connection refused
+    - OOMKill cascade across multiple pods
+    - ingress returning 502 or 504
+    - DNS resolution failure inside cluster
+
+  linux:
+    - disk full but df shows space available (open file handles)
+    - process consuming 100% CPU with no obvious cause
+    - systemd service failing to start
+    - memory pressure causing OOM without obvious culprit
+    - NFS mount hanging all processes on a host
+
+  networking:
+    - latency spike affecting only large payloads (MTU)
+    - DNS resolution intermittently failing
+    - packet loss between specific nodes
+    - firewall silently dropping connections
+    - asymmetric routing causing TCP resets
+
+  sre:
+    - error budget burning at 10x rate with no obvious cause
+    - cascading retry storm amplifying a small upstream error
+    - timeout misconfiguration propagating through the call chain
+    - alert firing but no user impact (or vice versa)
+    - postmortem reveals gap in monitoring coverage
+
+  aws:
+    - ALB returning 502 after a deployment
+    - ASG not scaling despite high CPU
+    - IAM permission denied appearing only in specific regions
+    - S3 access suddenly failing for a service that worked yesterday
+    - RDS connection pool exhaustion under normal load
+
+  general:
+    - service returning 5xx errors for a subset of requests
+    - latency p99 spiking while p50 is normal
+    - data inconsistency appearing in specific time windows
+    - memory growing slowly until OOM (leak pattern)
+
+# ─── GENERATION STEPS ─────────────────────────────────────────────────────────
+
+steps:
+  - step: 1
+    label: Select symptom class
+    instruction: >
+      Pick one symptom from the domain's list above.
+      Match difficulty: intermediate → simpler symptoms, senior → subtle/compound symptoms.
+
+  - step: 2
+    label: Select root cause
+    instruction: >
+      Pick ONE root cause. Requirements:
+      - Non-obvious from initial symptoms (the first guess should be wrong)
+      - Discoverable through logical investigation in 4-8 targeted steps
+      - Realistic — must actually happen in production environments
+      - Never pick the most obvious cause — that's a red herring candidate
+
+  - step: 3
+    label: Build the clue set
+    instruction: >
+      Design exactly 3 clues:
+      Clue 1 — Subtle. Available from the first command in the right direction.
+                Reveals the failure DOMAIN, not the root cause.
+      Clue 2 — Revealing. Requires 1-2 steps deeper than clue 1.
+                Narrows to the right SUBSYSTEM.
+      Clue 3 — The "aha" clue. Makes root cause clear when combined with clue 2.
+      Each clue must be a realistic command output with exact formatting.
+      (kubectl get, ps aux, netstat, ss -s, mtr, df, journalctl, curl -v, etc.)
+
+  - step: 4
+    label: Add red herrings
+    instruction: >
+      Add exactly 2 red herrings — metrics or events that look suspicious but are unrelated.
+      Requirements:
+      - Must be plausible (CPU spike on adjacent service, unrelated pod restart, old deploy)
+      - Must be realistic (correct timestamps, realistic values)
+      - Must not point toward the real root cause
+      Never tell the candidate something is a red herring. Let them work it out.
+
+  - step: 5
+    label: Write the opening message
+    instruction: >
+      Use the format from prompts/scenarios.md:
+      - Observable symptoms only — no root cause hints whatsoever
+      - Realistic service name, UTC timestamp, SLO burn rate
+      - 2-3 lines of monitoring data (error rate, latency, customer impact)
+      - End exactly with: "Where do you start?"
+
+  - step: 6
+    label: Set the turn budget
+    instruction: >
+      intermediate: 9 turns
+      senior:       12 turns
+      staff:        15 turns
+      Hint thresholds follow templates/interview_flow.yaml hint_thresholds.
+
+# ─── VALIDATION RULES ─────────────────────────────────────────────────────────
+
+validation:
+  root_cause_unique: >
+    Do not reuse a root cause already used earlier in the same session.
+    Track used root causes in session state.
+  clues_must_be_discoverable: >
+    Every clue must be findable using standard Linux/Kubernetes/SRE commands.
+    Never require obscure tools the candidate wouldn't know about.
+  red_herrings_must_be_plausible: >
+    A red herring that is obviously unrelated is useless.
+    It must look suspicious enough to investigate at least once.
+  no_trick_questions: >
+    The investigation must reward systematic thinking.
+    A candidate who forms a hypothesis and tests it should make progress.
+    Random guessing should not work.
