@@ -1,0 +1,92 @@
+# PrepOps — Interview Flow Template
+#
+# Defines the generic structure every adaptive interview session follows.
+# The engine applies blueprint.question_distribution to select topics per phase.
+# blueprint.difficulty sets the depth. blueprint.preferred_persona sets the voice.
+
+phases:
+  - id: warm_up
+    label: "Warm-up"
+    questions: 1
+    difficulty_offset: -1       # one level below blueprint difficulty
+    topic_selection: lowest_weight  # start with the lightest topic from distribution
+    purpose: >
+      Let the candidate settle into the session.
+      Observe confidence, whether they volunteer information or answer minimally,
+      and how they structure their first answer.
+
+  - id: core_technical
+    label: "Core Technical"
+    questions: 1
+    min_followups: 2
+    difficulty_offset: 0        # at blueprint difficulty
+    topic_selection: highest_weight  # lead with the most critical topic
+    purpose: >
+      The main signal question. After their answer, probe the single weakest part.
+      Minimum 2 follow-ups. Never accept the first answer as final.
+
+  - id: curveball
+    label: "Curveball"
+    questions: 1
+    difficulty_offset: +1       # one level above blueprint difficulty
+    topic_selection: adjacent   # topic adjacent to core_technical, not the same
+    purpose: >
+      Test reasoning under unfamiliar conditions.
+      Add a constraint they haven't seen: scale, failure, time pressure.
+
+  - id: production
+    label: "Production Scenario"
+    questions: 1
+    difficulty_offset: 0
+    topic_selection: incident_focus   # from blueprint.incident_focus
+    purpose: >
+      Live incident simulation. Load from incidents/, incident-templates/, or
+      generate on the fly using templates/incident_generation.yaml.
+      Respond as the terminal. Never narrate. Only reveal what commands expose.
+
+  - id: closing
+    label: "Closing"
+    questions: 1
+    difficulty_offset: 0
+    topic_selection: persona    # from persona file's closing_question field
+    purpose: >
+      Persona-specific closing question. Tests judgment, self-awareness, and depth.
+      No right or wrong answer — calibrate on reasoning quality.
+
+# ─── TOPIC ROTATION RULES ─────────────────────────────────────────────────────
+
+topic_rotation:
+  strategy: weighted_random       # select topics proportional to question_distribution
+  no_consecutive_repeat: true     # never ask two questions from the same topic in a row
+  coverage_target: >
+    By end of session, aim to touch every topic with weight ≥ 20%.
+    Topics with weight < 10% are optional — cover only if time permits.
+
+# ─── ADAPTIVE DIFFICULTY RULES ────────────────────────────────────────────────
+
+difficulty_adaptation:
+  increase_trigger:
+    consecutive_strong: 3         # 3 strong answers → move up one level
+    signals: ["volunteered depth", "raised failure modes unprompted", "correct trade-off"]
+
+  decrease_trigger:
+    consecutive_gaps: 2           # 2 large gaps → move down one level
+    signals: ["foundational misconception", "I don't know on basic concept", "no production thinking"]
+
+  how_to_increase:
+    - "Add a constraint: 'Now assume 10,000 pods' / 'Now assume multi-region'"
+    - "Ask about failure modes of their own proposed solution"
+    - "Move: concept → application → production scenario → system design"
+
+  how_to_decrease:
+    - "Break the question into a simpler prerequisite"
+    - "Offer an analogy before re-asking"
+    - "Shift from production scenario → conceptual question"
+
+# ─── HINT SYSTEM (production phase only) ──────────────────────────────────────
+
+hint_thresholds:
+  turn_3:  "Slack pressure — customer impact, urgency, no hint yet"
+  turn_6:  "Layer-level nudge from a colleague — narrows the area"
+  turn_9:  "Subsystem hint — more specific signal"
+  turn_12: "Reveal via colleague discovery — then ask for fix and postmortem"

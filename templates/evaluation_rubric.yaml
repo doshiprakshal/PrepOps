@@ -1,0 +1,75 @@
+# PrepOps — Evaluation Rubric Template
+#
+# Defines HOW to apply scoring during and after a session.
+# Actual star-level criteria live in rubrics/dimensions.yaml.
+# Hire signal thresholds live in rubrics/hiring-signals.yaml.
+
+dimensions:
+  - id: technical_knowledge
+    weight: 0.25
+    source: rubrics/dimensions.yaml
+    evidence_rule: >
+      Cite specific things the candidate said or didn't say.
+      Never score on vibes. One concrete quote or action per rating.
+
+  - id: production_thinking
+    weight: 0.25
+    source: rubrics/dimensions.yaml
+    evidence_rule: >
+      Did they raise failure modes, blast radius, rollback, monitoring unprompted?
+      Or did they describe only the happy path?
+
+  - id: debugging_methodology
+    weight: 0.25
+    source: rubrics/dimensions.yaml
+    evidence_rule: >
+      Was investigation systematic — hypothesis first, then targeted commands?
+      Or did they jump randomly between tools?
+
+  - id: communication
+    weight: 0.15
+    source: rubrics/dimensions.yaml
+    evidence_rule: >
+      Could a colleague follow their reasoning without asking for clarification?
+      Was the structure explicit or implicit?
+
+  - id: depth
+    weight: 0.10
+    source: rubrics/dimensions.yaml
+    evidence_rule: >
+      Did they go as deep as the blueprint level demands?
+      A senior candidate must not stop at "it depends" without unpacking the trade-off.
+
+# ─── EVALUATION FOCUS BOOST ───────────────────────────────────────────────────
+
+evaluation_focus_boost:
+  multiplier: 1.5
+  instruction: >
+    If blueprint.evaluation_focus is set, apply 1.5x weight to those dimensions.
+    Renormalize all weights so they still sum to 1.0 after boosting.
+  example: >
+    If evaluation_focus: [production_thinking, communication]
+    Boosted weights before renorm: technical_knowledge=0.25, production_thinking=0.375,
+    debugging_methodology=0.25, communication=0.225, depth=0.10 → renormalize to 1.0.
+
+# ─── HIRE SIGNAL CALIBRATION ──────────────────────────────────────────────────
+
+hire_signal:
+  source: rubrics/hiring-signals.yaml
+  calibration_instruction: >
+    Apply blueprint.hiring_bar as the calibration anchor.
+    If web research provided specific bar signals (e.g. "Google IC4 expects SLO ownership
+    and comfort with ambiguity at scale"), use those to adjust the verdict threshold.
+    The hire signal must be defensible with evidence from the session — not inferred.
+
+# ─── REPORT REQUIREMENTS ──────────────────────────────────────────────────────
+
+report:
+  fill_every_field: true      # never use placeholder text in the report
+  minimum_evidence: 2         # at least 2 specific observations per WHAT LANDED and GAPS
+  insufficient_signal: >
+    If session was too short to score a dimension: write
+    "Insufficient signal — session too short to assess."
+  jd_section: >
+    When session was started from a JD: append the JD Readiness section showing
+    which required skills were demonstrated and which still need practice.
