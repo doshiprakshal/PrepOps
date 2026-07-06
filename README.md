@@ -40,6 +40,7 @@ The goal is to help engineers think, debug, communicate, and reason like strong 
 | No hiring signal | Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire |
 | No replay value | Blueprint + persona + incident composition |
 | Static company prep | Dynamic blueprint from your actual JD |
+| No resume context | Resume gap analysis — prioritizes sessions around your weak areas |
 
 ---
 
@@ -107,18 +108,27 @@ Community contributors expand the domain assets: Knowledge, Incidents, Personas,
 
 ## Features
 
-- Adaptive concept coaching with Socratic follow-ups
-- Flashcards with self-grading and gap probing
-- Scenario-based MCQ practice
-- Production incident simulations (you're on-call, Claude responds as the terminal)
-- Debugging labs with broken configs, YAML, and shell output
-- Mock interviews with 9 distinct interviewer personas
-- Whiteboard interviews with architecture probing
-- System design sessions with adversarial review phase
-- Rapid-fire question sets
-- Mixed-mode sessions
+**11 learning modes:**
+
+| Mode | What it does |
+|------|-------------|
+| Learn Concept | Adaptive teaching with Socratic follow-ups |
+| Flashcards | Dynamic front/back cards, you self-grade |
+| MCQ Practice | Reasoning-focused multiple choice |
+| Production Scenarios | Live incident simulation — you're on-call, Claude responds as the terminal |
+| Debugging Labs | Broken configs and outputs, you diagnose and fix |
+| Mock Interview | You choose a persona, I become the interviewer |
+| Whiteboard Interview | Architecture in text, trade-offs, failure scenarios |
+| System Design | Design a full infrastructure system with adversarial review |
+| Rapid Fire | 15 quick questions for non-coding topics (Linux, networking, SRE concepts) |
+| Mixed Mode | PrepOps picks the best mix based on your weak areas |
+| Coding Reasoning | Problem walkthrough: approach, complexity, communication. Optimal solution revealed at the end. No code execution — pairs with LeetCode. |
+
+**Plus:**
 - JD-driven dynamic blueprint generation with mandatory web research
+- Resume gap analysis — maps your background to JD requirements, prioritizes sessions around missing evidence
 - Hiring-style end-of-session reports with JD readiness section
+- 9 distinct interviewer personas
 
 ---
 
@@ -210,13 +220,14 @@ You type commands. Claude responds as the terminal. Clues are layered. Red herri
 
 ```
 PrepOps/
-├── knowledge/          # Topic YAMLs — what to teach and how to evaluate
-├── blueprints/         # Company/role/level interview models
-├── personas/           # Interviewer behavioral profiles
+├── knowledge/          # Topic YAMLs — curriculum, misconceptions, scenario seeds
 ├── incidents/          # Production scenario definitions
+├── incident-templates/ # Reusable scenario patterns for on-the-fly generation
+├── personas/           # Interviewer behavioral profiles
 ├── rubrics/            # Hire signal and dimension scoring criteria
-├── prompts/            # Mode behavior files (learn, MCQ, mock interview, etc.)
-├── skills/claude/      # Claude Code skill entry point (SKILL.md)
+├── templates/          # Engine schemas (blueprint, flow, rubric, incident rules)
+├── prompts/            # Mode behavior files (engine — maintainers only)
+├── skills/claude/      # Claude Code skill entry point (engine — maintainers only)
 ├── schema/             # YAML schema definitions
 └── docs/               # Contributing guide and roadmap
 ```
@@ -319,20 +330,20 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for schemas, quality bar, and b
 
 ## Roadmap
 
-### Phase 1 (current)
-Claude skill · 10 learning modes · 9 personas · 8 company blueprints · 5 production incidents · hiring-style reports
+### ✅ Phase 1 — Core skill
+Claude Code skill · 11 learning modes · 9 personas · 5 production incidents · hiring-style reports
 
-### Phase 2
-Job description parsing · blueprint matching · personalized prep roadmap · mandatory web search for current interview formats
+### ✅ Phase 2 — JD-driven personalization
+Dynamic blueprint generation from job description + mandatory web research · resume gap analysis · compact confidence-rated prep plan · Coding Reasoning mode · community contribution model (Knowledge, Incidents, Personas, Rubrics)
 
 ### Phase 3
-Python CLI · session persistence · progress tracking · cross-session weak area tracking · provider abstraction (local models via Ollama)
+Python CLI · session persistence · progress tracking across sessions · cross-session weak area tracking · provider abstraction (local models via Ollama)
 
 ### Phase 4
-Web UI · interview history dashboard · readiness score · shareable reports
+Web UI · interview history dashboard · readiness trend · shareable session reports
 
 ### Phase 5
-Standalone prompt distribution (paste into any Claude conversation — no install required) · single-command curl installer · multi-provider support
+Standalone prompt distribution (paste into any Claude conversation — no install required) · multi-provider support
 
 ---
 
