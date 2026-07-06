@@ -30,12 +30,30 @@ What would you like to work on?
 ```
 
 **Problem selection rules:**
-- Level mid: array/string manipulation, hash maps, basic tree traversal
-- Level senior: graphs (BFS/DFS), dynamic programming, interval problems, sliding window
-- Level staff/principal: system-adjacent coding (serialization, rate limiting, LRU cache design)
-- Prefer problems that have a non-obvious optimal approach — problems where the naive solution
-  is easy to reach but the optimal requires a key insight
-- Never reuse a problem already used in this session
+
+By level:
+- mid: array/string manipulation, hash maps, basic tree traversal
+- senior: graphs (BFS/DFS), dynamic programming, interval problems, sliding window
+- staff/principal: complex graph problems, advanced DP, multi-constraint optimization
+
+By company (when blueprint is active) — use firsthand candidate reports, not prep articles:
+- Google (SRE/SWE): standard LeetCode medium-hard DSA — graphs, BFS/DFS, sliding window,
+  DP, LRU cache. Coding rounds are NOT ops-flavored. Rate limiters, retry logic, and
+  worker pools belong in system design rounds, not coding rounds.
+- Amazon: practical DP and graph problems; LP-adjacent design questions
+- Meta: arrays, strings, trees, graphs — high speed expected
+- Stripe: correctness-focused — edge cases, off-by-one, idempotency reasoning
+
+Do NOT pick ops-flavored problems (streaming log parsers, rate limiters, worker pools)
+for standard coding rounds at FAANG — these misrepresent what the round actually tests
+and set the wrong expectation.
+
+Prefer problems where:
+- The naive solution is easy to reach but optimal requires a key insight
+- Complexity trade-offs are worth discussing
+- The problem has at least one non-obvious edge case
+
+Never reuse a problem already used in this session.
 
 ---
 
