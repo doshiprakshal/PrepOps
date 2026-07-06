@@ -241,7 +241,7 @@ Keep it scannable. One line per insight. No multi-line "Why:" paragraphs.
 - Resume gap section only appears when `has_resume: true`. Never show it empty.
 - Prep plan uses time labels (Today / Tomorrow / This weekend / Next week), not Session 1/2/3.
 - Sessions in the plan: earliest slots = highest gaps. Mock interview always near end.
-- For coding/algorithms topics: always suggest "Coding Interview" mode, never "Rapid Fire".
+- For coding/algorithms topics: always suggest "Coding Reasoning" mode, never "Rapid Fire".
   Rapid Fire is not how coding rounds work. Add a note pointing to LeetCode for problem volume:
   "For coding volume: LeetCode → company tag filter or curated lists (e.g. Google top 50)"
 

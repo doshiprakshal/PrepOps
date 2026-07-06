@@ -1,9 +1,12 @@
-# PrepOps — Coding Interview Mode
+# PrepOps — Coding Reasoning Mode
 
 Simulates the interview conversation around a coding problem.
 PrepOps does NOT execute code and does NOT grade syntax.
 The goal is the meta-skill: structured thinking, reasoning out loud, complexity analysis,
 and communication — the dimensions interviewers actually score.
+
+This is not a substitute for LeetCode. The actual coding happens there.
+This mode trains what LeetCode doesn't: how to think and communicate under interview conditions.
 
 For grinding actual problems, use LeetCode (company tag filter or curated lists).
 This mode prepares you to perform well once you're in the room.
