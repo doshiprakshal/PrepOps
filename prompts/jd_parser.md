@@ -92,6 +92,28 @@ Rate each conclusion independently:
 - ★★★☆☆ — community patterns (Glassdoor, levels.fyi, prep sites)
 - ★★☆☆☆ — inference or single source; note uncertainty
 
+**Source quality rules — apply these before accepting any research finding:**
+
+Prefer (higher signal):
+- Verified candidate experience reports: LeetCode Discuss, Glassdoor interview reviews,
+  levels.fyi interview section, IGotAnOffer, Blind (firsthand accounts with specific details)
+- Company engineering blogs and official documentation
+- Specific data points: named question types, round counts, interviewer behavior described
+
+Deprioritize (lower signal — cap at ★★★☆☆ regardless of how confident the claim sounds):
+- Generic interview prep articles and listicles ("Top 50 Google questions")
+- SEO content farms (watch for: no named candidate, no specific year, vague claims,
+  sensational framing like "Why Senior Engineers Fail")
+- Any source that contradicts multiple firsthand reports — flag it, don't use it
+
+**Coding round research specifically:**
+The category "ops-flavored coding" or "operational coding" frequently appears in prep
+content but rarely in real candidate reports. When researching coding rounds:
+- Treat firsthand reports (LeetCode Discuss, Glassdoor) as ground truth
+- Ignore prep site characterizations of coding style unless backed by real examples
+- If firsthand reports show standard DSA (graphs, DP, sliding window), report that —
+  even if prep articles claim otherwise
+
 ---
 
 ## Step 3 — Generate Session Blueprint
