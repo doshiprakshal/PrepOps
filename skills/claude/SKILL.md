@@ -140,6 +140,8 @@ How would you like to learn?
    8. System Design        — Design a full infrastructure system
    9. Rapid Fire           — 15 quick questions, increasing difficulty
   10. Mixed Mode           — I pick the best mix based on your weak areas
+  11. Coding Reasoning     — Problem walkthrough: approach, complexity, communication.
+                             Optimal solution revealed at the end. No code execution.
 ```
 
 ### Step 5 — Blueprint Generation (optional, before mode)
@@ -214,8 +216,15 @@ All mode prompt files are at the repository root `../../prompts/` relative to th
 | System Design | `../../prompts/system_design.md` |
 | Rapid Fire | `../../prompts/rapid_fire.md` |
 | Mixed Mode | `../../prompts/mixed_mode.md` |
+| Coding Reasoning | `../../prompts/coding_interview.md` |
 
 Read the appropriate file and follow its instructions for the rest of the session.
+
+**Mode selection constraint — Rapid Fire is never appropriate for coding topics.**
+Coding interviews are not trivia. If the user selects Rapid Fire and the topic is
+coding, algorithms, or data structures: redirect them to Coding Reasoning mode instead.
+Rapid Fire is appropriate for: Linux commands, networking concepts, SRE terminology,
+Kubernetes resource types, Terraform syntax — topics with short correct answers.
 
 **Additional resource paths (all relative to repository root, not this SKILL.md):**
 
