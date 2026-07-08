@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PrepOps Session Record",
+  "description": "One completed PrepOps session. Written at end of session, never modified.",
+  "type": "object",
+  "required": ["version", "session_id", "date", "topic", "mode", "difficulty", "scores", "hire_signal"],
+  "properties": {
+    "version": { "type": "string" },
+    "session_id": {
+      "type": "string",
+      "description": "ISO timestamp formatted as YYYY-MM-DDTHH-MM for use as filename.",
+      "examples": ["2026-07-08T14-20"]
+    },
+    "date": { "type": "string", "format": "date-time" },
+    "topic": { "type": "string", "examples": ["kubernetes", "linux", "sre"] },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "Learn Concept", "Flashcards", "MCQ Practice", "Production Scenarios",
+        "Debugging Labs", "Mock Interview", "Whiteboard Interview", "System Design",
+        "Rapid Fire", "Mixed Mode", "Coding Reasoning"
+      ]
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["junior", "mid", "senior", "staff", "principal"]
+    },
+    "blueprint": {
+      "type": "object",
+      "description": "Active blueprint if session was JD-driven. Null otherwise.",
+      "properties": {
+        "company": { "type": "string" },
+        "role": { "type": "string" },
+        "level": { "type": "string" }
+      }
+    },
+    "scores": {
+      "type": "object",
+      "description": "Star ratings (1-5) per dimension. Map star count directly.",
+      "properties": {
+        "technical_knowledge": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "production_thinking": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "debugging_methodology": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "communication": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "depth": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "hire_signal": {
+      "type": "string",
+      "enum": ["Strong Hire", "Lean Hire", "Borderline", "Lean No Hire", "No Hire"]
+    },
+    "strengths": {
+      "type": "array",
+      "description": "Specific things the candidate got right — quoted phrases from session.",
+      "items": { "type": "string" }
+    },
+    "weaknesses": {
+      "type": "array",
+      "description": "Specific gaps identified — named precisely, not generically.",
+      "items": { "type": "string" }
+    },
+    "coding_patterns_seen": {
+      "type": "array",
+      "description": "Coding patterns encountered in Coding Reasoning mode.",
+      "items": { "type": "string" },
+      "examples": [["BFS", "sliding window", "DP"]]
+    },
+    "recommended_next": {
+      "type": "string",
+      "description": "Single recommended next session from the report.",
+      "examples": ["Production Scenario · networking · senior"]
+    }
+  }
+}

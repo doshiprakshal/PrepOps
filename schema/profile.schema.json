@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PrepOps Candidate Profile",
+  "description": "Persistent candidate profile. Evolves over time across sessions.",
+  "type": "object",
+  "required": ["version", "created_at", "updated_at", "experience_level"],
+  "properties": {
+    "version": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "experience_level": {
+      "type": "string",
+      "enum": ["junior", "mid", "senior", "staff", "principal"]
+    },
+    "target_roles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "examples": [["SRE", "Platform Engineer", "DevOps"]]
+    },
+    "target_companies": {
+      "type": "array",
+      "items": { "type": "string" },
+      "examples": [["Google", "Datadog", "Stripe"]]
+    },
+    "favorite_domains": {
+      "type": "array",
+      "items": { "type": "string" },
+      "examples": [["kubernetes", "linux", "sre"]]
+    },
+    "preferred_learning_modes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "examples": [["Production Scenarios", "Mock Interview"]]
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "storage_backend": {
+          "type": "string",
+          "enum": ["local"],
+          "description": "Storage backend. Pluggable — local is the only implementation in Phase 3."
+        },
+        "storage_path": {
+          "type": "string",
+          "default": "~/.prepops",
+          "description": "Root path for all PrepOps storage files."
+        },
+        "show_dashboard": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the welcome dashboard at session start."
+        },
+        "adaptive_difficulty": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically adjust difficulty based on session performance."
+        }
+      }
+    },
+    "total_sessions": { "type": "integer", "default": 0 },
+    "last_session_at": { "type": "string", "format": "date-time" }
+  }
+}

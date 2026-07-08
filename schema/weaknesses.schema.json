@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PrepOps Weakness Trends",
+  "description": "Recurring gaps across sessions. Only tracks patterns seen 2+ times. Single-session mistakes are not stored.",
+  "type": "object",
+  "required": ["version", "updated_at", "items"],
+  "properties": {
+    "version": { "type": "string" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic", "domain", "occurrences", "last_seen", "status"],
+        "properties": {
+          "topic": {
+            "type": "string",
+            "description": "Specific concept or gap — precise, not generic.",
+            "examples": ["NetworkPolicy", "MTU debugging", "SLO error budget math"]
+          },
+          "domain": { "type": "string", "examples": ["kubernetes", "networking", "sre"] },
+          "occurrences": {
+            "type": "integer",
+            "minimum": 2,
+            "description": "Number of sessions where this gap appeared. Minimum 2 to appear here."
+          },
+          "first_seen": { "type": "string", "format": "date" },
+          "last_seen": { "type": "string", "format": "date" },
+          "difficulty": {
+            "type": "string",
+            "enum": ["junior", "mid", "senior", "staff", "principal"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["needs_reinforcement", "improving", "resolved"],
+            "description": "improving = seen less frequently or with smaller gap. resolved = not seen in last 3 sessions."
+          },
+          "recommended_mode": {
+            "type": "string",
+            "description": "Best PrepOps mode to address this weakness.",
+            "examples": ["Production Scenarios", "Debugging Labs", "Learn Concept"]
+          },
+          "session_ids": {
+            "type": "array",
+            "description": "Session IDs where this weakness appeared.",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

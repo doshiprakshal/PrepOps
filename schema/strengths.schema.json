@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PrepOps Strength Trends",
+  "description": "Consistently strong areas across sessions. Only tracks topics with 3+ strong signals.",
+  "type": "object",
+  "required": ["version", "updated_at", "items"],
+  "properties": {
+    "version": { "type": "string" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic", "domain", "consecutive_strong", "last_seen", "rating"],
+        "properties": {
+          "topic": {
+            "type": "string",
+            "examples": ["Linux Troubleshooting", "SLO design", "Kubernetes networking"]
+          },
+          "domain": { "type": "string" },
+          "consecutive_strong": {
+            "type": "integer",
+            "minimum": 3,
+            "description": "Consecutive sessions with strong signal on this topic. Minimum 3 to appear here."
+          },
+          "last_5_scores": {
+            "type": "array",
+            "description": "Star scores (1-5) from the last 5 sessions on this topic.",
+            "items": { "type": "integer", "minimum": 1, "maximum": 5 },
+            "maxItems": 5
+          },
+          "last_seen": { "type": "string", "format": "date" },
+          "current_difficulty": {
+            "type": "string",
+            "enum": ["junior", "mid", "senior", "staff", "principal"]
+          },
+          "rating": {
+            "type": "string",
+            "enum": ["strong", "consistently_excellent"],
+            "description": "strong = 3+ consecutive strong sessions. consistently_excellent = 5+ consecutive."
+          },
+          "recommended_next": {
+            "type": "string",
+            "description": "What to do next with this strength.",
+            "examples": [
+              "Increase difficulty to staff level",
+              "Use as anchor in Mock Interview",
+              "Ready — move to other topics"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
