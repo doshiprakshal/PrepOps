@@ -5,967 +5,640 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PrepOps</title>
   <script>
-    window.__origWarn = console.warn.bind(console);
-    console.warn = (...a) => {
-      if (typeof a[0] === 'string' && a[0].includes('cdn.tailwindcss.com')) return;
-      window.__origWarn(...a);
-    };
+    window.__ow = console.warn.bind(console);
+    console.warn = (...a) => { if (typeof a[0]==='string' && a[0].includes('cdn.tailwindcss')) return; window.__ow(...a); };
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>console.warn = window.__origWarn; delete window.__origWarn;</script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>console.warn = window.__ow; delete window.__ow;</script>
   <style>
-    body { background: #020617; margin: 0; }
-    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    .hide-scrollbar::-webkit-scrollbar { display: none; }
-    @keyframes bounce-dot {
-      0%, 80%, 100% { transform: translateY(0); }
-      40% { transform: translateY(-6px); }
-    }
-    .dot { animation: bounce-dot 1.2s infinite ease-in-out; }
-    .dot:nth-child(2) { animation-delay: 0.2s; }
-    .dot:nth-child(3) { animation-delay: 0.4s; }
+    body { background:#020617; margin:0; }
+    .hs  { -ms-overflow-style:none; scrollbar-width:none; }
+    .hs::-webkit-scrollbar { display:none; }
+    @keyframes bd { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-5px)} }
+    .dot { display:inline-block;width:6px;height:6px;background:#818cf8;border-radius:50%;
+           animation:bd 1.2s infinite ease-in-out; }
+    .dot:nth-child(2){animation-delay:.2s}
+    .dot:nth-child(3){animation-delay:.4s}
+    textarea { font-family:inherit; }
+    pre { font-family:ui-monospace,monospace; }
   </style>
 </head>
 <body>
-  <div id="root"></div>
+<div id="app"></div>
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────────
+const TOPICS = [
+  {slug:'kubernetes',           display:'Kubernetes — Pods & Workloads',       domain:'Kubernetes',    coverage:'full'},
+  {slug:'kubernetes_networking',display:'Kubernetes — Networking & CNI',        domain:'Kubernetes',    coverage:'full'},
+  {slug:'kubernetes_services',  display:'Kubernetes — Services & DNS',          domain:'Kubernetes',    coverage:'full'},
+  {slug:'helm',                 display:'Helm',                                 domain:'Kubernetes',    coverage:'none'},
+  {slug:'linux',                display:'Linux — Processes & Systemd',          domain:'Linux',         coverage:'full'},
+  {slug:'linux_performance',    display:'Linux — Performance & Profiling',      domain:'Linux',         coverage:'full'},
+  {slug:'linux_filesystems',    display:'Linux — Filesystems & Storage',        domain:'Linux',         coverage:'full'},
+  {slug:'terraform',            display:'Terraform — State & Backends',         domain:'Terraform',     coverage:'full'},
+  {slug:'terraform_modules',    display:'Terraform — Modules & Reuse',          domain:'Terraform',     coverage:'full'},
+  {slug:'terraform_drift',      display:'Terraform — Drift & Import',           domain:'Terraform',     coverage:'full'},
+  {slug:'aws_iam',              display:'AWS — IAM & Permissions',              domain:'AWS',           coverage:'full'},
+  {slug:'aws_autoscaling',      display:'AWS — Auto Scaling',                   domain:'AWS',           coverage:'full'},
+  {slug:'aws_load_balancing',   display:'AWS — Load Balancing',                 domain:'AWS',           coverage:'full'},
+  {slug:'networking_dns',       display:'Networking — DNS',                     domain:'Networking',    coverage:'full'},
+  {slug:'networking_tcp',       display:'Networking — TCP & Tuning',            domain:'Networking',    coverage:'full'},
+  {slug:'networking_lb',        display:'Networking — Load Balancing',          domain:'Networking',    coverage:'full'},
+  {slug:'sre_slos',             display:'SRE — SLOs & Error Budgets',           domain:'SRE',           coverage:'full'},
+  {slug:'sre_incident',         display:'SRE — Incident Response',              domain:'SRE',           coverage:'full'},
+  {slug:'sre_reliability',      display:'SRE — Reliability Patterns',           domain:'SRE',           coverage:'full'},
+  {slug:'docker',               display:'Docker & Containers',                  domain:'Containers',    coverage:'none'},
+  {slug:'gcp',                  display:'Google Cloud Platform',                domain:'Cloud',         coverage:'none'},
+  {slug:'prometheus',           display:'Prometheus & Alerting',                domain:'Observability', coverage:'none'},
+  {slug:'grafana',              display:'Grafana',                              domain:'Observability', coverage:'none'},
+  {slug:'cicd',                 display:'CI/CD Pipelines',                      domain:'Engineering',   coverage:'none'},
+  {slug:'platform',             display:'Platform Engineering',                 domain:'Engineering',   coverage:'none'},
+  {slug:'mlops',                display:'MLOps',                                domain:'AI/ML',         coverage:'none'},
+  {slug:'aiops',                display:'AIOps',                                domain:'AI/ML',         coverage:'none'},
+  {slug:'troubleshooting',      display:'General Troubleshooting',              domain:'SRE',           coverage:'none'},
+  {slug:'coding',               display:'Coding & Scripting',                   domain:'Engineering',   coverage:'none'},
+  {slug:'behavioral',           display:'Behavioral / Leadership Principles',   domain:'Soft Skills',   coverage:'none'},
+];
 
-  <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+const FLOWS = [
+  {id:'concept',  stage:1, ok:true,  icon:'📚', title:'Concept Prep',        desc:'Adaptive Socratic teaching, flashcards, and MCQ for any infrastructure topic.', cta:'Choose a topic →'},
+  {id:'incident', stage:2, ok:false, icon:'🚨', title:'Production Scenarios', desc:'Live incident simulation — you\'re on-call, PrepOps responds as the terminal.'},
+  {id:'debugging',stage:2, ok:false, icon:'🔬', title:'Debugging Lab',        desc:'Broken configs and outputs — diagnose root cause and propose a fix.'},
+  {id:'coding',   stage:2, ok:false, icon:'⚡', title:'Coding Reasoning',     desc:'Problem walkthrough: approach, complexity, communication, optimal reveal.'},
+  {id:'mock',     stage:3, ok:false, icon:'🎯', title:'Mock Interview',       desc:'Full persona-driven interview with hiring-signal feedback at the end.'},
+  {id:'design',   stage:3, ok:false, icon:'🏗️', title:'System Design',        desc:'Design an infrastructure system end-to-end with adversarial follow-ups.'},
+  {id:'jd',       stage:4, ok:false, icon:'📋', title:'JD-Driven Prep',       desc:'Paste a job description — PrepOps generates your full personalized prep plan.'},
+];
 
-    // ─── Knowledge Coverage Map ────────────────────────────────────────────────
-    // Derived from templates/knowledge_mapping.yaml
-    const TOPICS = [
-      { slug: 'kubernetes',              display: 'Kubernetes — Pods & Workloads',     domain: 'Kubernetes',       coverage: 'full' },
-      { slug: 'kubernetes_networking',   display: 'Kubernetes — Networking & CNI',     domain: 'Kubernetes',       coverage: 'full' },
-      { slug: 'kubernetes_services',     display: 'Kubernetes — Services & DNS',       domain: 'Kubernetes',       coverage: 'full' },
-      { slug: 'helm',                    display: 'Helm',                              domain: 'Kubernetes',       coverage: 'none' },
-      { slug: 'linux',                   display: 'Linux — Processes & Systemd',       domain: 'Linux',            coverage: 'full' },
-      { slug: 'linux_performance',       display: 'Linux — Performance & Profiling',   domain: 'Linux',            coverage: 'full' },
-      { slug: 'linux_filesystems',       display: 'Linux — Filesystems & Storage',     domain: 'Linux',            coverage: 'full' },
-      { slug: 'terraform',               display: 'Terraform — State & Backends',      domain: 'Terraform',        coverage: 'full' },
-      { slug: 'terraform_modules',       display: 'Terraform — Modules & Reuse',       domain: 'Terraform',        coverage: 'full' },
-      { slug: 'terraform_drift',         display: 'Terraform — Drift & Import',        domain: 'Terraform',        coverage: 'full' },
-      { slug: 'aws_iam',                 display: 'AWS — IAM & Permissions',           domain: 'AWS',              coverage: 'full' },
-      { slug: 'aws_autoscaling',         display: 'AWS — Auto Scaling',                domain: 'AWS',              coverage: 'full' },
-      { slug: 'aws_load_balancing',      display: 'AWS — Load Balancing',              domain: 'AWS',              coverage: 'full' },
-      { slug: 'networking_dns',          display: 'Networking — DNS',                  domain: 'Networking',       coverage: 'full' },
-      { slug: 'networking_tcp',          display: 'Networking — TCP & Tuning',         domain: 'Networking',       coverage: 'full' },
-      { slug: 'networking_load_balancing', display: 'Networking — Load Balancing',     domain: 'Networking',       coverage: 'full' },
-      { slug: 'sre_slos',                display: 'SRE — SLOs & Error Budgets',        domain: 'SRE',              coverage: 'full' },
-      { slug: 'sre_incident_response',   display: 'SRE — Incident Response',           domain: 'SRE',              coverage: 'full' },
-      { slug: 'sre_reliability',         display: 'SRE — Reliability Patterns',        domain: 'SRE',              coverage: 'full' },
-      { slug: 'gcp',                     display: 'Google Cloud Platform',             domain: 'Cloud',            coverage: 'none' },
-      { slug: 'docker',                  display: 'Docker & Containers',               domain: 'Containers',       coverage: 'none' },
-      { slug: 'prometheus',              display: 'Prometheus & Alerting',             domain: 'Observability',    coverage: 'none' },
-      { slug: 'grafana',                 display: 'Grafana',                           domain: 'Observability',    coverage: 'none' },
-      { slug: 'cicd',                    display: 'CI/CD Pipelines',                   domain: 'Engineering',      coverage: 'none' },
-      { slug: 'platform_engineering',    display: 'Platform Engineering',              domain: 'Engineering',      coverage: 'none' },
-      { slug: 'mlops',                   display: 'MLOps',                             domain: 'AI/ML',            coverage: 'none' },
-      { slug: 'aiops',                   display: 'AIOps',                             domain: 'AI/ML',            coverage: 'none' },
-      { slug: 'troubleshooting',         display: 'General Troubleshooting',           domain: 'SRE',              coverage: 'none' },
-      { slug: 'coding',                  display: 'Coding & Scripting',                domain: 'Engineering',      coverage: 'none' },
-      { slug: 'behavioral',              display: 'Behavioral / Leadership Principles',domain: 'Soft Skills',      coverage: 'none' },
-    ];
+const MODES = [
+  {id:'learn',      label:'Learn Concept', sub:'Socratic dialogue with follow-up questions'},
+  {id:'flashcards', label:'Flashcards',    sub:'Front/back cards, self-graded'},
+  {id:'mcq',        label:'MCQ Practice',  sub:'Scenario-based MCQ with reasoning explanations'},
+];
 
-    // ─── Home Screen Flows ─────────────────────────────────────────────────────
-    const FLOWS = [
-      {
-        id: 'concept', stage: 1, available: true,
-        icon: '📚', title: 'Concept Prep',
-        description: 'Adaptive Socratic teaching, flashcards, and MCQ for any infrastructure topic.',
-        cta: 'Choose a topic →',
-      },
-      {
-        id: 'incident', stage: 2, available: false,
-        icon: '🚨', title: 'Production Scenarios',
-        description: 'Live incident simulation — you\'re on-call, PrepOps responds as the terminal.',
-      },
-      {
-        id: 'debugging', stage: 2, available: false,
-        icon: '🔬', title: 'Debugging Lab',
-        description: 'Broken configs and outputs — diagnose root cause and propose a fix.',
-      },
-      {
-        id: 'coding', stage: 2, available: false,
-        icon: '⚡', title: 'Coding Reasoning',
-        description: 'Problem walkthrough: approach, complexity, communication, optimal reveal.',
-      },
-      {
-        id: 'mock', stage: 3, available: false,
-        icon: '🎯', title: 'Mock Interview',
-        description: 'Full persona-driven interview with hiring-signal feedback at the end.',
-      },
-      {
-        id: 'design', stage: 3, available: false,
-        icon: '🏗️', title: 'System Design',
-        description: 'Design an infrastructure system end-to-end with adversarial follow-ups.',
-      },
-      {
-        id: 'jd', stage: 4, available: false,
-        icon: '📋', title: 'JD-Driven Prep',
-        description: 'Paste a job description — PrepOps generates your full personalized prep plan.',
-      },
-    ];
+// ── App state ─────────────────────────────────────────────────────────────────
+const S = {
+  topic: null,
+  diff:  'Senior',
+  mode:  'learn',
+  msgs:  [],       // {role, content}
+  query: '',
+};
 
-    // ─── PrepOps Engine Prompts ────────────────────────────────────────────────
-    const CORE = `You are PrepOps, an AI interview coach for Infrastructure, DevOps, SRE, Cloud, and Platform Engineering roles.
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-Core philosophy:
-- Train reasoning and production thinking — never memorization of facts
-- Ask follow-up questions the way a real technical interviewer would
+function badge(coverage) {
+  return coverage === 'full'
+    ? `<span class="inline-flex text-xs px-2 py-0.5 rounded-md border bg-emerald-950 border-emerald-800 text-emerald-400 font-medium">✓ Full curriculum</span>`
+    : `<span class="inline-flex text-xs px-2 py-0.5 rounded-md border bg-amber-950 border-amber-800 text-amber-400 font-medium">⚠ General knowledge</span>`;
+}
+
+function modeLabel(id) { return MODES.find(m => m.id === id)?.label || id; }
+function modeSub(id)   { return MODES.find(m => m.id === id)?.sub   || ''; }
+
+const claudeOk = () =>
+  typeof window.claude !== 'undefined' && typeof window.claude.complete === 'function';
+
+async function ask(prompt) {
+  if (!claudeOk()) throw new Error('Open this file in Claude.ai to enable AI.');
+  return await window.claude.complete(prompt);
+}
+
+// ── Prompts ───────────────────────────────────────────────────────────────────
+const CORE = `You are PrepOps, an AI interview coach for Infrastructure, DevOps, SRE, Cloud, and Platform Engineering.
+
+Philosophy:
+- Train reasoning and production thinking — never memorization
+- Ask follow-up questions like a real technical interviewer
 - Surface misconceptions actively — name them when you see them
-- Give honest, specific feedback; never say "good effort" without naming exactly what was good
+- Give specific feedback; never say "good effort" without naming exactly what was good
 - Frame feedback as hiring signal: Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire
 
-You simulate a rigorous technical interview environment. Be direct, specific, and production-grounded.
-Keep responses conversational — this is dialogue, not a lecture. Max 3 sentences before a follow-up question.`;
+Be direct, specific, production-grounded. Keep responses conversational.`;
 
-    const MODE_INSTRUCTIONS = {
-      learn: (topic, level, coverageNote) =>
-`Mode: Learn Concept
-Topic: ${topic}
-Level: ${level}
-${coverageNote}
+function covNote(t) {
+  return t.coverage === 'full'
+    ? `PrepOps has a full structured curriculum for "${t.display}" — use production-grounded questions, common misconceptions, and real debugging scenarios.`
+    : `PrepOps has no structured curriculum for "${t.display}" — draw on general knowledge and be upfront about it.`;
+}
 
-Run an adaptive Socratic teaching session.
+const MPROMPTS = {
+  learn: t =>
+`Mode: Learn Concept | Topic: ${t.display} | Level: ${S.diff}
+${covNote(t)}
 
-1. Open with ONE concrete, production-grounded question to probe the user's current understanding.
-   Do NOT ask "what is X." Instead: "Walk me through what happens when..." or "When would you choose X over Y?"
-2. Based on their answer, probe deeper (if strong) or fill the gap (if weak). One follow-up at a time.
-3. After 5-7 exchanges, surface the key misconception most engineers have about this topic.
+Run an adaptive Socratic session. Open with ONE concrete, production-grounded question — not "what is X", ask "walk me through what happens when…" or "when would you choose X over Y?". Probe based on their answer; one follow-up at a time. After 5-7 exchanges surface the key misconception most engineers have about this topic. Keep responses tight. Ask your opening question now.`,
 
-Keep responses tight. Ask your opening question now.`,
+  flashcards: t =>
+`Mode: Flashcards | Topic: ${t.display} | Level: ${S.diff}
+${covNote(t)}
 
-      flashcards: (topic, level, coverageNote) =>
-`Mode: Flashcards
-Topic: ${topic}
-Level: ${level}
-${coverageNote}
+Generate one flashcard at a time. Show only the FRONT first. Wait for user response, then show BACK.
 
-Generate one flashcard at a time. Wait for the user's response before showing the back.
+FRONT: [Production-grounded question — test "why" and "what breaks", not definitions]
 
-Card format — show only the FRONT first:
-
-FRONT: [Production-grounded question. Test "why" and "what breaks" — not definitions.
-Examples: "What's the first thing you check when pods are crashing with OOMKilled?"
-or "What breaks in a Kubernetes cluster if you delete the kube-proxy DaemonSet?"]
-
-After the user responds, show the BACK:
-
-BACK: [2-4 sentence answer. The key insight + why it matters in production. Not a definition.]
+After user responds:
+BACK: [2-4 sentence answer. Key insight + why it matters in production. Not a textbook definition.]
 
 Then ask: "How'd that go? Got it / Almost / Missed it"
+Adjust difficulty based on self-grade. Start with card 1 — show only the FRONT.`,
 
-Adjust difficulty based on their self-grade. After 5 cards, briefly note their pattern.
-Start with card 1 now — show only the FRONT.`,
-
-      mcq: (topic, level, coverageNote) =>
-`Mode: MCQ Practice
-Topic: ${topic}
-Level: ${level}
-${coverageNote}
+  mcq: t =>
+`Mode: MCQ Practice | Topic: ${t.display} | Level: ${S.diff}
+${covNote(t)}
 
 Generate one scenario-based MCQ at a time.
 
-Format:
-Q: [Scenario — NOT a definition. "You notice X symptom, what's the most likely cause?" or
-"Your team must choose between A and B for this scenario — which do you pick?"]
+Q: [Scenario — not a definition. "You notice X symptom, what's the most likely cause?"]
+A) …  B) …  C) …  D) …
 
-A) ...
-B) ...
-C) ...
-D) ...
+After user answers: name the correct answer, explain WHY it's correct (the principle), explain what makes the wrong options wrong, state the production implication. Then ask if they're ready for the next question. Start with question 1 now.`,
+};
 
-Wait for their answer, then:
-1. Name the correct answer (A/B/C/D)
-2. Explain WHY it's correct — the principle, not just the fact
-3. Explain what makes the wrong options wrong
-4. State the production implication
+function buildInit() {
+  return `${CORE}\n\n${MPROMPTS[S.mode](S.topic)}\n\nPrepOps:`;
+}
 
-Then ask if they're ready for the next question. Generate question 1 now.`,
-    };
+function buildTurn(userMsg) {
+  const hist = S.msgs.map(m => `${m.role==='user'?'User':'PrepOps'}: ${m.content}`).join('\n\n');
+  return `${CORE}\n\n${MPROMPTS[S.mode](S.topic)}\n\nConversation so far:\n${hist}\n\nUser: ${userMsg}\n\nPrepOps:`;
+}
 
-    function coverageNote(topic) {
-      return topic.coverage === 'full'
-        ? `PrepOps has a full structured curriculum for "${topic.display}" — use production-grounded questions, common misconceptions, and real debugging scenarios from that domain.`
-        : `PrepOps does not have a structured curriculum for "${topic.display}". Draw on general knowledge and be upfront about it.`;
-    }
+function buildReport() {
+  const ml  = modeLabel(S.mode);
+  const ex  = S.msgs.filter(m => m.role==='user').length;
+  const txt = S.msgs.map(m => `${m.role==='user'?'User':'PrepOps'}: ${m.content}`).join('\n\n');
+  return `Generate a concise PrepOps session report.
 
-    function buildInitPrompt(topic, mode, level) {
-      const instructions = MODE_INSTRUCTIONS[mode](topic.display, level, coverageNote(topic));
-      return `${CORE}\n\n${instructions}\n\nPrepOps:`;
-    }
-
-    function buildTurnPrompt(topic, mode, level, history, userMessage) {
-      const instructions = MODE_INSTRUCTIONS[mode](topic.display, level, coverageNote(topic));
-      const historyText = history.map(m =>
-        `${m.role === 'user' ? 'User' : 'PrepOps'}: ${m.content}`
-      ).join('\n\n');
-      return `${CORE}\n\n${instructions}\n\nConversation so far:\n${historyText}\n\nUser: ${userMessage}\n\nPrepOps:`;
-    }
-
-    function buildReportPrompt(topic, mode, level, history) {
-      const modeLabel = { learn: 'Learn Concept', flashcards: 'Flashcards', mcq: 'MCQ Practice' }[mode];
-      const transcript = history.map(m =>
-        `${m.role === 'user' ? 'User' : 'PrepOps'}: ${m.content}`
-      ).join('\n\n');
-      const exchanges = history.filter(m => m.role === 'user').length;
-
-      return `Generate a concise PrepOps session report.
-
-Topic: ${topic.display}
-Mode: ${modeLabel}
-Level: ${level}
-Exchanges: ${exchanges}
+Topic: ${S.topic.display} | Mode: ${ml} | Level: ${S.diff} | Exchanges: ${ex}
 
 Session transcript:
-${transcript}
+${txt}
 
-${exchanges < 3 ? 'NOTE: Very short session (< 3 exchanges) — note this at the top.\n\n' : ''}Write the report in this exact format:
+${ex<3?'NOTE: Very short session — note this at the top.\n\n':''}Write the report in this exact format:
 
 OVERALL ASSESSMENT
-[Hire signal: Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire]
-[One specific sentence explaining what drove that signal — cite the actual exchange, not a generic statement]
+[Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire]
+[One specific sentence explaining what drove that signal — cite the actual exchange]
 
 STRENGTHS
 1. [Specific — name what they said or did correctly and why it matters]
 2. [Specific strength]
-3. [Specific strength — if session was too short for 3, write only what you have]
+3. [Specific strength — write only what you have if session was short]
 
 AREAS TO IMPROVE
-1. [Specific gap — name what was missing or wrong and the production implication]
+1. [Specific gap — name what was missing and the production implication]
 2. [Specific gap]
-3. [Specific gap — if session was too short for 3, write only what you have]
+3. [Specific gap — write only what you have if session was short]
 
 NEXT SESSION
 Topic: [specific topic recommendation]
 Mode: [Learn Concept / Flashcards / MCQ Practice]
 Why: [One sentence — what this session revealed that makes this the right next step]
 
-Rules:
-- Every point must be specific. Never write "shows promise" or "good effort" without naming the exact evidence.
-- Hire signal must be exactly one of the 5 options above.
-- Keep each line tight — one observation per line, no multi-sentence bullets.`;
-    }
+Every point must be specific. Hire signal must be one of the 5 options above exactly.`;
+}
 
-    // ─── AI integration ────────────────────────────────────────────────────────
-    function claudeAvailable() {
-      return typeof window !== 'undefined' &&
-        typeof window.claude !== 'undefined' &&
-        typeof window.claude.complete === 'function';
-    }
+// ── Message bubble HTML ───────────────────────────────────────────────────────
+function bubbleHTML(role, content) {
+  const e = esc(content);
+  if (role === 'user') return `
+    <div class="flex justify-end mb-5">
+      <div class="max-w-[78%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-indigo-600 text-white rounded-2xl rounded-br-sm">${e}</div>
+      <div class="w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white ml-2.5 mt-0.5 flex-shrink-0">U</div>
+    </div>`;
+  return `
+    <div class="flex justify-start mb-5">
+      <div class="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white mr-2.5 mt-0.5 flex-shrink-0">P</div>
+      <div class="max-w-[78%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-slate-800 text-slate-100 rounded-2xl rounded-bl-sm border border-slate-700">${e}</div>
+    </div>`;
+}
 
-    async function callClaude(prompt) {
-      if (!claudeAvailable()) {
-        throw new Error('Claude is not available. Open this file as an artifact in Claude.ai.');
-      }
-      return await window.claude.complete(prompt);
-    }
+// ── HOME ──────────────────────────────────────────────────────────────────────
+function showHome() {
+  const cards = FLOWS.map(f => `
+    <button ${f.ok ? 'onclick="showSetup()"' : 'disabled'}
+      class="relative text-left p-5 rounded-xl border transition-all ${f.ok ? 'bg-slate-900 border-slate-700 hover:border-indigo-500 hover:bg-slate-800 cursor-pointer' : 'bg-slate-900/40 border-slate-800/60 cursor-not-allowed'}">
+      ${!f.ok ? `<span class="absolute top-3 right-3 text-xs text-slate-600 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">Stage ${f.stage}</span>` : ''}
+      <div class="text-2xl mb-3">${f.icon}</div>
+      <h3 class="font-semibold text-sm mb-1.5 ${f.ok ? 'text-white' : 'text-slate-500'}">${esc(f.title)}</h3>
+      <p class="text-xs leading-relaxed ${f.ok ? 'text-slate-400' : 'text-slate-600'}">${esc(f.desc)}</p>
+      ${f.ok ? `<div class="mt-4 text-indigo-400 text-xs font-medium">${f.cta}</div>` : ''}
+    </button>`).join('');
 
-    // ─── Small components ──────────────────────────────────────────────────────
-    function CoverageBadge({ coverage }) {
-      if (coverage === 'full') {
-        return (
-          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md border bg-emerald-950 border-emerald-800 text-emerald-400 font-medium">
-            ✓ Full curriculum
-          </span>
-        );
-      }
-      return (
-        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md border bg-amber-950 border-amber-800 text-amber-400 font-medium">
-          ⚠ General knowledge
-        </span>
-      );
-    }
-
-    function TypingDots() {
-      return (
-        <div className="flex items-center gap-2 px-4 py-3 text-slate-400 text-sm">
-          <span className="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">P</span>
-          <span>PrepOps is thinking</span>
-          <span className="flex gap-0.5 ml-0.5">
-            <span className="dot w-1.5 h-1.5 bg-indigo-400 rounded-full inline-block" />
-            <span className="dot w-1.5 h-1.5 bg-indigo-400 rounded-full inline-block" />
-            <span className="dot w-1.5 h-1.5 bg-indigo-400 rounded-full inline-block" />
-          </span>
-        </div>
-      );
-    }
-
-    function Bubble({ msg }) {
-      const isUser = msg.role === 'user';
-      return (
-        <div className={`flex mb-5 ${isUser ? 'justify-end' : 'justify-start'}`}>
-          {!isUser && (
-            <div className="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white mr-2.5 mt-0.5 flex-shrink-0">
-              P
-            </div>
-          )}
-          <div
-            className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-              isUser
-                ? 'bg-indigo-600 text-white rounded-2xl rounded-br-sm'
-                : 'bg-slate-800 text-slate-100 rounded-2xl rounded-bl-sm border border-slate-700'
-            }`}
-          >
-            {msg.content}
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-5xl mx-auto flex items-center justify-between">
+          <div>
+            <span class="text-white font-bold text-lg">PrepOps</span>
+            <span class="text-slate-500 text-xs ml-3">Infrastructure · DevOps · SRE · Cloud</span>
           </div>
-          {isUser && (
-            <div className="w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white ml-2.5 mt-0.5 flex-shrink-0">
-              U
+          ${!claudeOk() ? `<div class="text-xs bg-amber-950 border border-amber-800 text-amber-400 px-3 py-1.5 rounded-lg">⚠ Open in Claude.ai to enable AI</div>` : ''}
+        </div>
+      </div>
+      <div class="max-w-5xl mx-auto px-6 pt-12 pb-8">
+        <h1 class="text-3xl font-bold text-white mb-3">What would you like to practice?</h1>
+        <p class="text-slate-400">Adaptive coaching, production scenarios, and hiring-signal feedback.</p>
+      </div>
+      <div class="max-w-5xl mx-auto px-6 pb-16">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards}</div>
+        <p class="mt-8 text-center text-slate-600 text-xs">PrepOps trains reasoning, not memorization · AI billed to your Claude.ai account</p>
+      </div>
+    </div>`;
+}
+
+// ── SETUP ─────────────────────────────────────────────────────────────────────
+function dropHTML() {
+  const q  = S.query;
+  const list = q.length === 0
+    ? TOPICS.filter(t => t.coverage === 'full').slice(0, 9)
+    : TOPICS.filter(t =>
+        t.display.toLowerCase().includes(q.toLowerCase()) ||
+        t.domain.toLowerCase().includes(q.toLowerCase())
+      ).slice(0, 8);
+  const hasCustom = q.trim() &&
+    !TOPICS.find(t => t.display.toLowerCase() === q.trim().toLowerCase());
+
+  const rows = list.map((t, i) => `
+    <button onmousedown="pickTopic('${esc(t.slug)}')"
+      class="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 transition-colors ${i < list.length-1 || hasCustom ? 'border-b border-slate-800' : ''}">
+      <span>
+        <span class="text-white">${esc(t.display)}</span>
+        <span class="text-slate-600 text-xs ml-2">${esc(t.domain)}</span>
+      </span>
+      ${badge(t.coverage)}
+    </button>`).join('');
+
+  const customRow = hasCustom ? `
+    <button onmousedown="pickCustom()"
+      class="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 bg-slate-800/40 border-t border-slate-700">
+      <span class="text-indigo-400">Use "${esc(q.trim())}" as custom topic</span>
+      ${badge('none')}
+    </button>` : '';
+
+  const empty = list.length === 0 && !hasCustom
+    ? `<div class="px-4 py-3 text-slate-500 text-sm">No matches</div>` : '';
+
+  return `<div class="absolute z-20 w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+    ${rows}${customRow}${empty}
+  </div>`;
+}
+
+function showSetup() {
+  S.query = S.topic ? S.topic.display : '';
+
+  const diffBtns = ['Junior','Mid','Senior','Staff'].map(d => `
+    <button onclick="pickDiff('${d}')" id="diff-${d}"
+      class="px-4 py-2 rounded-lg text-sm font-medium border transition-all ${S.diff===d ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}">
+      ${d}
+    </button>`).join('');
+
+  const modeBtns = MODES.map(m => `
+    <button onclick="pickMode('${m.id}')" id="mode-${m.id}"
+      class="w-full text-left px-4 py-3.5 rounded-xl border transition-all ${S.mode===m.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}">
+      <div class="text-sm font-medium ${S.mode===m.id ? 'text-indigo-300' : 'text-slate-300'}">${m.label}</div>
+      <div class="text-xs text-slate-500 mt-0.5">${m.sub}</div>
+    </button>`).join('');
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-2xl mx-auto flex items-center gap-4">
+          <button onclick="showHome()" class="text-slate-400 hover:text-white text-sm transition-colors">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Concept Prep</span>
+        </div>
+      </div>
+      <div class="max-w-2xl mx-auto px-6 py-10 space-y-10">
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">What would you like to study?</label>
+          <div class="relative">
+            <input id="topic-inp" type="text" value="${esc(S.query)}" autocomplete="off"
+              placeholder="Search topics, or type anything…"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 pr-44 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+            <div id="badge-slot" class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              ${S.topic ? badge(S.topic.coverage) : ''}
             </div>
-          )}
+            <div id="drop"></div>
+          </div>
+          <p id="cov-msg" class="mt-2 text-xs text-slate-500">
+            ${S.topic ? (S.topic.coverage==='full'
+              ? '✅ Full PrepOps curriculum — structured concepts, misconceptions, and production scenarios.'
+              : '⚠ General knowledge mode — no structured curriculum for this topic.') : ''}
+          </p>
         </div>
-      );
-    }
 
-    function ErrorBanner({ message, onRetry }) {
-      return (
-        <div className="mx-4 mb-4 bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl flex items-center justify-between">
-          <span>{message}</span>
-          {onRetry && (
-            <button onClick={onRetry} className="ml-4 text-red-400 hover:text-red-200 underline text-xs flex-shrink-0">
-              Retry
-            </button>
-          )}
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Difficulty</label>
+          <div class="flex gap-2 flex-wrap">${diffBtns}</div>
         </div>
-      );
-    }
 
-    // ─── HOME VIEW ─────────────────────────────────────────────────────────────
-    function HomeView({ onSelect }) {
-      const available = claudeAvailable();
-      return (
-        <div className="min-h-screen bg-slate-950 text-slate-100">
-          {/* Header */}
-          <div className="border-b border-slate-800 px-6 py-4">
-            <div className="max-w-5xl mx-auto flex items-center justify-between">
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Mode</label>
+          <div class="space-y-2">${modeBtns}</div>
+        </div>
+
+        <button id="go-btn" onclick="showReview()"
+          class="w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${S.topic ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}"
+          ${S.topic ? '' : 'disabled'}>
+          ${S.topic ? `Start ${modeLabel(S.mode)} →` : 'Select a topic to continue'}
+        </button>
+
+      </div>
+    </div>`;
+
+  // Topic input events
+  const inp = $('topic-inp');
+  inp.addEventListener('input', () => {
+    S.query = inp.value;
+    S.topic = null;
+    $('drop').innerHTML = dropHTML();
+    $('badge-slot').innerHTML = '';
+    $('cov-msg').textContent = '';
+    refreshGoBtn();
+  });
+  inp.addEventListener('focus', () => { $('drop').innerHTML = dropHTML(); });
+  inp.addEventListener('blur',  () => { setTimeout(() => { $('drop').innerHTML = ''; }, 160); });
+}
+
+window.pickTopic = function(slug) {
+  const t = TOPICS.find(x => x.slug === slug);
+  if (!t) return;
+  S.topic = t;
+  S.query = t.display;
+  $('topic-inp').value = t.display;
+  $('drop').innerHTML = '';
+  $('badge-slot').innerHTML = badge(t.coverage);
+  $('cov-msg').textContent = t.coverage==='full'
+    ? '✅ Full PrepOps curriculum — structured concepts, misconceptions, and production scenarios.'
+    : '⚠ General knowledge mode — no structured curriculum for this topic.';
+  refreshGoBtn();
+};
+
+window.pickCustom = function() {
+  S.topic = { slug:'custom', display:S.query.trim(), domain:'Custom', coverage:'none' };
+  $('drop').innerHTML = '';
+  $('badge-slot').innerHTML = badge('none');
+  $('cov-msg').textContent = '⚠ General knowledge mode — no structured curriculum for this topic.';
+  refreshGoBtn();
+};
+
+window.pickDiff = function(d) {
+  S.diff = d;
+  ['Junior','Mid','Senior','Staff'].forEach(v => {
+    const b = $(`diff-${v}`);
+    if (!b) return;
+    b.className = `px-4 py-2 rounded-lg text-sm font-medium border transition-all ${S.diff===v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}`;
+  });
+};
+
+window.pickMode = function(id) {
+  S.mode = id;
+  MODES.forEach(m => {
+    const b = $(`mode-${m.id}`);
+    if (!b) return;
+    b.className = `w-full text-left px-4 py-3.5 rounded-xl border transition-all ${S.mode===m.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}`;
+    b.querySelector('div').className = `text-sm font-medium ${S.mode===m.id ? 'text-indigo-300' : 'text-slate-300'}`;
+  });
+  refreshGoBtn();
+};
+
+function refreshGoBtn() {
+  const btn = $('go-btn');
+  if (!btn) return;
+  if (S.topic) {
+    btn.disabled = false;
+    btn.className = 'w-full py-3.5 rounded-xl font-semibold text-sm transition-all bg-indigo-600 hover:bg-indigo-500 text-white';
+    btn.textContent = `Start ${modeLabel(S.mode)} →`;
+  } else {
+    btn.disabled = true;
+    btn.className = 'w-full py-3.5 rounded-xl font-semibold text-sm transition-all bg-slate-800 text-slate-600 cursor-not-allowed';
+    btn.textContent = 'Select a topic to continue';
+  }
+}
+
+// ── REVIEW ─────────────────────────────────────────────────────────────────────
+window.showReview = function() {
+  if (!S.topic) return;
+  S.msgs = [];
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-xl mx-auto flex items-center gap-4">
+          <button onclick="showSetup()" class="text-slate-400 hover:text-white text-sm">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Session Review</span>
+        </div>
+      </div>
+      <div class="flex-1 flex items-center justify-center px-6 py-16">
+        <div class="w-full max-w-xl">
+          <p class="text-slate-400 text-sm mb-6">Review your settings before starting.</p>
+          <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden mb-6">
+            <div class="px-5 py-4 border-b border-slate-800 flex items-start justify-between gap-4">
               <div>
-                <span className="text-white font-bold text-lg tracking-tight">PrepOps</span>
-                <span className="text-slate-500 text-xs ml-3">Infrastructure · DevOps · SRE · Cloud</span>
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Topic</div>
+                <div class="text-white font-semibold text-base">${esc(S.topic.display)}</div>
               </div>
-              {!available && (
-                <div className="text-xs bg-amber-950 border border-amber-800 text-amber-400 px-3 py-1.5 rounded-lg">
-                  ⚠ Open in Claude.ai to enable AI
-                </div>
-              )}
+              ${badge(S.topic.coverage)}
             </div>
-          </div>
-
-          {/* Hero */}
-          <div className="max-w-5xl mx-auto px-6 pt-12 pb-8">
-            <h1 className="text-3xl font-bold text-white mb-3 tracking-tight">
-              What would you like to practice?
-            </h1>
-            <p className="text-slate-400 text-base">
-              Adaptive coaching, production scenarios, and hiring-signal feedback — built for infrastructure engineers.
-            </p>
-          </div>
-
-          {/* Flow grid */}
-          <div className="max-w-5xl mx-auto px-6 pb-16">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {FLOWS.map(flow => (
-                <button
-                  key={flow.id}
-                  onClick={() => flow.available && onSelect(flow.id)}
-                  disabled={!flow.available}
-                  className={[
-                    'relative text-left p-5 rounded-xl border transition-all duration-150',
-                    flow.available
-                      ? 'bg-slate-900 border-slate-700 hover:border-indigo-500 hover:bg-slate-800/80 cursor-pointer group'
-                      : 'bg-slate-900/40 border-slate-800/60 cursor-not-allowed',
-                  ].join(' ')}
-                >
-                  {/* Stage badge for unavailable */}
-                  {!flow.available && (
-                    <span className="absolute top-3 right-3 text-xs text-slate-600 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">
-                      Stage {flow.stage}
-                    </span>
-                  )}
-
-                  <div className="text-2xl mb-3">{flow.icon}</div>
-                  <h3 className={`font-semibold text-sm mb-1.5 ${flow.available ? 'text-white group-hover:text-indigo-300' : 'text-slate-500'}`}>
-                    {flow.title}
-                  </h3>
-                  <p className={`text-xs leading-relaxed ${flow.available ? 'text-slate-400' : 'text-slate-600'}`}>
-                    {flow.description}
-                  </p>
-                  {flow.available && (
-                    <div className="mt-4 text-indigo-400 text-xs font-medium group-hover:text-indigo-300 flex items-center gap-1">
-                      {flow.cta}
-                    </div>
-                  )}
-                </button>
-              ))}
+            <div class="grid grid-cols-2 divide-x divide-slate-800">
+              <div class="px-5 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Difficulty</div>
+                <div class="text-white font-medium">${esc(S.diff)}</div>
+              </div>
+              <div class="px-5 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Mode</div>
+                <div class="text-white font-medium">${esc(modeLabel(S.mode))}</div>
+                <div class="text-slate-500 text-xs mt-0.5">${esc(modeSub(S.mode))}</div>
+              </div>
             </div>
+            ${S.topic.coverage==='none' ? `
+            <div class="px-5 py-3 bg-amber-950/40 border-t border-amber-900/50">
+              <p class="text-amber-400 text-xs">⚠ No structured curriculum — PrepOps will use general knowledge.</p>
+            </div>` : ''}
+          </div>
+          <button onclick="beginSession()" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-sm">Begin Session →</button>
+          <button onclick="showSetup()" class="w-full mt-3 py-2.5 text-slate-500 hover:text-slate-300 text-sm">← Change settings</button>
+        </div>
+      </div>
+    </div>`;
+};
 
-            <p className="mt-8 text-center text-slate-600 text-xs">
-              PrepOps trains reasoning, not memorization · AI responses billed to your Claude.ai account
-            </p>
+// ── SESSION ───────────────────────────────────────────────────────────────────
+window.beginSession = async function() {
+  renderSessionShell();
+  setLoad(true);
+  try {
+    const res = await ask(buildInit());
+    S.msgs.push({role:'assistant', content:res});
+    setLoad(false);
+    addBubble('assistant', res);
+  } catch(e) {
+    setLoad(false);
+    showSessErr(e.message);
+  }
+};
+
+function renderSessionShell() {
+  $('app').innerHTML = `
+    <div style="display:flex;flex-direction:column;height:100vh" class="bg-slate-950 text-slate-100">
+      <div class="flex-shrink-0 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <button onclick="showSetup()" class="text-slate-500 hover:text-white text-sm flex-shrink-0">←</button>
+          <span class="text-white text-sm font-medium truncate">${esc(S.topic.display)}</span>
+        </div>
+        <button onclick="showReport()" class="flex-shrink-0 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg">
+          End session →
+        </button>
+      </div>
+
+      <div id="msg-scroll" class="hs" style="flex:1;overflow-y:auto">
+        <div class="max-w-3xl mx-auto px-4 pt-4 pb-6">
+          <div class="mb-5 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap text-xs text-slate-400">
+            <span class="font-medium text-slate-300">${esc(modeLabel(S.mode))}</span>
+            <span class="text-slate-700">·</span>
+            <span>${esc(S.diff)}</span>
+            <span class="text-slate-700">·</span>
+            ${badge(S.topic.coverage)}
+            <span class="ml-auto text-slate-600" id="ex-ct">0 exchanges</span>
+          </div>
+          <div id="msg-list"></div>
+          <div id="load-dots" style="display:none" class="flex items-center gap-2 px-4 py-3 text-slate-400 text-sm">
+            <div class="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">P</div>
+            <span>PrepOps is thinking</span>
+            <span class="flex gap-0.5 ml-0.5"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+          </div>
+          <div id="sess-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl mb-4"></div>
+          <div id="anchor"></div>
+        </div>
+      </div>
+
+      <div class="flex-shrink-0 border-t border-slate-800 px-4 py-4">
+        <div class="max-w-3xl mx-auto flex gap-3">
+          <textarea id="inp" rows="2" placeholder="Your answer… (Enter to send, Shift+Enter for newline)"
+            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none"></textarea>
+          <button id="send-btn" class="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 rounded-xl text-sm font-medium">
+            Send
+          </button>
+        </div>
+        <p class="max-w-3xl mx-auto mt-2 text-right text-xs text-slate-700">Responses billed to your Claude.ai account</p>
+      </div>
+    </div>`;
+
+  $('send-btn').addEventListener('click', sendMsg);
+  $('inp').addEventListener('keydown', e => {
+    if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+  });
+}
+
+function addBubble(role, content) {
+  const list = $('msg-list');
+  if (!list) return;
+  const d = document.createElement('div');
+  d.innerHTML = bubbleHTML(role, content);
+  list.appendChild(d);
+  const n = S.msgs.filter(m => m.role==='user').length;
+  const ct = $('ex-ct');
+  if (ct) ct.textContent = `${n} exchange${n!==1?'s':''}`;
+  $('anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+function setLoad(on) {
+  const el = $('load-dots');
+  if (el) el.style.display = on ? 'flex' : 'none';
+  const btn = $('send-btn');
+  const inp = $('inp');
+  if (btn) btn.disabled = on;
+  if (inp) inp.disabled = on;
+}
+
+function showSessErr(msg) {
+  const el = $('sess-err');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = msg;
+  $('anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+async function sendMsg() {
+  const inp = $('inp');
+  if (!inp) return;
+  const txt = inp.value.trim();
+  if (!txt) return;
+  inp.value = '';
+  const errEl = $('sess-err');
+  if (errEl) errEl.style.display = 'none';
+
+  S.msgs.push({role:'user', content:txt});
+  addBubble('user', txt);
+  setLoad(true);
+
+  try {
+    const res = await ask(buildTurn(txt));
+    S.msgs.push({role:'assistant', content:res});
+    setLoad(false);
+    addBubble('assistant', res);
+  } catch(e) {
+    S.msgs.pop();
+    setLoad(false);
+    showSessErr(e.message);
+  }
+}
+
+// ── REPORT ────────────────────────────────────────────────────────────────────
+window.showReport = async function() {
+  const ml = modeLabel(S.mode);
+  const ex = S.msgs.filter(m => m.role==='user').length;
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 class="text-white font-semibold text-sm">Session Report</h1>
+            <p class="text-slate-500 text-xs mt-0.5">${esc(S.topic.display)} · ${esc(ml)} · ${esc(S.diff)} · ${ex} exchange${ex!==1?'s':''}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="showSetup()" class="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">New session</button>
+            <button onclick="showHome()" class="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg">Home</button>
           </div>
         </div>
-      );
-    }
-
-    // ─── CONCEPT SETUP VIEW ────────────────────────────────────────────────────
-    const DIFFICULTIES = [
-      { id: 'Junior',    label: 'Junior' },
-      { id: 'Mid',       label: 'Mid' },
-      { id: 'Senior',    label: 'Senior' },
-      { id: 'Staff',     label: 'Staff' },
-    ];
-
-    const MODES = [
-      {
-        id: 'learn',
-        label: 'Learn Concept',
-        sub: 'Socratic dialogue — PrepOps questions until you can explain it cold',
-      },
-      {
-        id: 'flashcards',
-        label: 'Flashcards',
-        sub: 'Front/back cards, self-graded — builds recall under interview pressure',
-      },
-      {
-        id: 'mcq',
-        label: 'MCQ Practice',
-        sub: 'Scenario-based multiple choice with full reasoning explanations',
-      },
-    ];
-
-    function ConceptSetupView({ onStart, onBack }) {
-      const [query, setQuery]         = useState('');
-      const [topic, setTopic]         = useState(null);
-      const [showDrop, setShowDrop]   = useState(false);
-      const [difficulty, setDiff]     = useState('Senior');
-      const [mode, setMode]           = useState('learn');
-      const inputRef = useRef(null);
-
-      const filtered = query.length === 0
-        ? TOPICS.filter(t => t.coverage === 'full').slice(0, 9)
-        : TOPICS.filter(t =>
-            t.display.toLowerCase().includes(query.toLowerCase()) ||
-            t.domain.toLowerCase().includes(query.toLowerCase())
-          ).slice(0, 8);
-
-      const customOption = query.trim() &&
-        !TOPICS.find(t => t.display.toLowerCase() === query.trim().toLowerCase());
-
-      function pick(t) {
-        setTopic(t);
-        setQuery(t.display);
-        setShowDrop(false);
-      }
-
-      function pickCustom() {
-        const t = { slug: 'custom', display: query.trim(), domain: 'Custom', coverage: 'none' };
-        setTopic(t);
-        setShowDrop(false);
-      }
-
-      const canStart = !!topic;
-
-      return (
-        <div className="min-h-screen bg-slate-950 text-slate-100">
-          {/* Header */}
-          <div className="border-b border-slate-800 px-6 py-4">
-            <div className="max-w-2xl mx-auto flex items-center gap-4">
-              <button onClick={onBack} className="text-slate-400 hover:text-white text-sm transition-colors flex items-center gap-1">
-                ← Back
-              </button>
-              <div className="w-px h-4 bg-slate-700" />
-              <span className="text-white font-semibold text-sm">Concept Prep</span>
-            </div>
-          </div>
-
-          <div className="max-w-2xl mx-auto px-6 py-10 space-y-10">
-
-            {/* Topic picker */}
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-3">
-                What would you like to study?
-              </label>
-              <div className="relative">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={query}
-                  onChange={e => { setQuery(e.target.value); setTopic(null); setShowDrop(true); }}
-                  onFocus={() => setShowDrop(true)}
-                  onBlur={() => setTimeout(() => setShowDrop(false), 160)}
-                  placeholder="Search topics, or type anything..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 pr-40 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                />
-                {topic && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <CoverageBadge coverage={topic.coverage} />
-                  </div>
-                )}
-
-                {/* Dropdown */}
-                {showDrop && (
-                  <div className="absolute z-20 w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-                    {filtered.map((t, i) => (
-                      <button
-                        key={t.slug}
-                        onMouseDown={() => pick(t)}
-                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 transition-colors ${i < filtered.length - 1 || customOption ? 'border-b border-slate-800' : ''}`}
-                      >
-                        <span>
-                          <span className="text-white">{t.display}</span>
-                          <span className="text-slate-600 text-xs ml-2">{t.domain}</span>
-                        </span>
-                        <CoverageBadge coverage={t.coverage} />
-                      </button>
-                    ))}
-                    {customOption && (
-                      <button
-                        onMouseDown={pickCustom}
-                        className="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 bg-slate-800/40 transition-colors"
-                      >
-                        <span className="text-indigo-400">Use "{query.trim()}" as custom topic</span>
-                        <CoverageBadge coverage="none" />
-                      </button>
-                    )}
-                    {filtered.length === 0 && !customOption && (
-                      <div className="px-4 py-3 text-slate-500 text-sm">No matches found</div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Coverage note */}
-              {topic && (
-                <p className="mt-2 text-xs text-slate-500">
-                  {topic.coverage === 'full'
-                    ? '✅ Full PrepOps curriculum — structured concepts, misconceptions, and production scenarios.'
-                    : '⚠ General knowledge mode — no PrepOps curriculum for this topic yet. AI draws on broad knowledge.'}
-                </p>
-              )}
-            </div>
-
-            {/* Difficulty */}
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-3">Difficulty</label>
-              <div className="flex gap-2 flex-wrap">
-                {DIFFICULTIES.map(d => (
-                  <button
-                    key={d.id}
-                    onClick={() => setDiff(d.id)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all border ${
-                      difficulty === d.id
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'
-                    }`}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Mode */}
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-3">Mode</label>
-              <div className="space-y-2">
-                {MODES.map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => setMode(m.id)}
-                    className={`w-full text-left px-4 py-3.5 rounded-xl border transition-all ${
-                      mode === m.id
-                        ? 'bg-indigo-950 border-indigo-600'
-                        : 'bg-slate-900 border-slate-700 hover:border-slate-600'
-                    }`}
-                  >
-                    <div className={`text-sm font-medium ${mode === m.id ? 'text-indigo-300' : 'text-slate-300'}`}>
-                      {m.label}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-0.5">{m.sub}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Start */}
-            <button
-              onClick={() => canStart && onStart(topic, difficulty, mode)}
-              disabled={!canStart}
-              className={`w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${
-                canStart
-                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                  : 'bg-slate-800 text-slate-600 cursor-not-allowed'
-              }`}
-            >
-              {canStart
-                ? `Start ${MODES.find(m => m.id === mode)?.label} →`
-                : 'Select a topic to continue'}
-            </button>
-
-          </div>
+      </div>
+      <div class="max-w-3xl mx-auto px-6 py-10">
+        <div id="rpt-load" class="flex flex-col items-center gap-4 py-20">
+          <div class="flex gap-1"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <p class="text-slate-400 text-sm">Generating your session report…</p>
         </div>
-      );
-    }
-
-    // ─── SESSION VIEW ──────────────────────────────────────────────────────────
-    function SessionView({ topic, difficulty, mode, onEnd, onBack }) {
-      const [started, setStarted]   = useState(false);
-      const [messages, setMessages] = useState([]);
-      const [input, setInput]       = useState('');
-      const [loading, setLoading]   = useState(false);
-      const [error, setError]       = useState(null);
-      const bottomRef = useRef(null);
-
-      const modeLabel = { learn: 'Learn Concept', flashcards: 'Flashcards', mcq: 'MCQ Practice' }[mode];
-      const modeSub   = { learn: 'Socratic dialogue with follow-up questions', flashcards: 'Front/back cards, self-graded', mcq: 'Scenario-based MCQ with reasoning explanations' }[mode];
-      const exchanges = messages.filter(m => m.role === 'user').length;
-
-      useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, [messages, loading]);
-
-      async function beginSession() {
-        setStarted(true);
-        setLoading(true);
-        setError(null);
-        try {
-          const res = await callClaude(buildInitPrompt(topic, mode, difficulty));
-          setMessages([{ role: 'assistant', content: res }]);
-        } catch (e) {
-          setError(e.message);
-        } finally {
-          setLoading(false);
-        }
-      }
-
-      async function send() {
-        const text = input.trim();
-        if (!text || loading) return;
-        setInput('');
-        setError(null);
-
-        const next = [...messages, { role: 'user', content: text }];
-        setMessages(next);
-        setLoading(true);
-
-        try {
-          const res = await callClaude(buildTurnPrompt(topic, mode, difficulty, messages, text));
-          setMessages([...next, { role: 'assistant', content: res }]);
-        } catch (e) {
-          setError(e.message);
-          setMessages(next);
-        } finally {
-          setLoading(false);
-        }
-      }
-
-      function onKey(e) {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-      }
-
-      // ── Pre-session review panel ─────────────────────────────────────────────
-      if (!started) {
-        return (
-          <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-            <div className="border-b border-slate-800 px-6 py-4">
-              <div className="max-w-xl mx-auto flex items-center gap-4">
-                <button onClick={onBack} className="text-slate-400 hover:text-white text-sm transition-colors">
-                  ← Back
-                </button>
-                <div className="w-px h-4 bg-slate-700" />
-                <span className="text-white font-semibold text-sm">Session Review</span>
-              </div>
-            </div>
-
-            <div className="flex-1 flex items-center justify-center px-6 py-16">
-              <div className="w-full max-w-xl">
-                <p className="text-slate-400 text-sm mb-6">Review your session settings before starting.</p>
-
-                {/* Settings summary */}
-                <div className="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden mb-6">
-                  <div className="px-5 py-4 border-b border-slate-800 flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Topic</div>
-                      <div className="text-white font-semibold text-base">{topic.display}</div>
-                    </div>
-                    <CoverageBadge coverage={topic.coverage} />
-                  </div>
-                  <div className="grid grid-cols-2 divide-x divide-slate-800">
-                    <div className="px-5 py-4">
-                      <div className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Difficulty</div>
-                      <div className="text-white font-medium">{difficulty}</div>
-                    </div>
-                    <div className="px-5 py-4">
-                      <div className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Mode</div>
-                      <div className="text-white font-medium">{modeLabel}</div>
-                      <div className="text-slate-500 text-xs mt-0.5">{modeSub}</div>
-                    </div>
-                  </div>
-                  {topic.coverage === 'none' && (
-                    <div className="px-5 py-3 bg-amber-950/40 border-t border-amber-900/50">
-                      <p className="text-amber-400 text-xs">
-                        ⚠ No structured curriculum for this topic — PrepOps will use general knowledge.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={beginSession}
-                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-sm transition-colors"
-                >
-                  Begin Session →
-                </button>
-                <button
-                  onClick={onBack}
-                  className="w-full mt-3 py-2.5 text-slate-500 hover:text-slate-300 text-sm transition-colors"
-                >
-                  ← Change settings
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // ── Live session ─────────────────────────────────────────────────────────
-      return (
-        <div className="flex flex-col h-screen bg-slate-950 text-slate-100">
-
-          {/* Top bar */}
-          <div className="flex-shrink-0 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <button onClick={onBack} className="text-slate-500 hover:text-white text-sm transition-colors flex-shrink-0">
-                ←
-              </button>
-              <span className="text-white text-sm font-medium truncate">{topic.display}</span>
-            </div>
-            <button
-              onClick={() => onEnd(messages)}
-              className="flex-shrink-0 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-colors"
-            >
-              End session →
-            </button>
-          </div>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto hide-scrollbar">
-            <div className="max-w-3xl mx-auto px-4 pt-4 pb-6">
-
-              {/* Session context strip */}
-              <div className="mb-5 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap text-xs text-slate-400">
-                <span className="font-medium text-slate-300">{modeLabel}</span>
-                <span className="text-slate-700">·</span>
-                <span>{difficulty}</span>
-                <span className="text-slate-700">·</span>
-                <CoverageBadge coverage={topic.coverage} />
-                <span className="ml-auto text-slate-600">{exchanges} exchange{exchanges !== 1 ? 's' : ''}</span>
-              </div>
-
-              {messages.length === 0 && !loading && !error && (
-                <div className="text-slate-600 text-sm text-center mt-16">Starting session...</div>
-              )}
-              {messages.map((m, i) => <Bubble key={i} msg={m} />)}
-              {loading && <TypingDots />}
-              {error && (
-                <ErrorBanner
-                  message={error}
-                  onRetry={messages.length === 0 ? beginSession : null}
-                />
-              )}
-              <div ref={bottomRef} />
-            </div>
-          </div>
-
-          {/* Input */}
-          <div className="flex-shrink-0 border-t border-slate-800 px-4 py-4">
-            <div className="max-w-3xl mx-auto flex gap-3">
-              <textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={onKey}
-                disabled={loading}
-                rows={2}
-                placeholder="Your answer... (Enter to send, Shift+Enter for newline)"
-                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none disabled:opacity-50"
-              />
-              <button
-                onClick={send}
-                disabled={!input.trim() || loading}
-                className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 rounded-xl text-sm font-medium transition-colors"
-              >
-                Send
-              </button>
-            </div>
-            <p className="max-w-3xl mx-auto mt-2 text-right text-xs text-slate-700">
-              Responses billed to your Claude.ai account
-            </p>
-          </div>
-
+        <div id="rpt-box" style="display:none" class="bg-slate-900 border border-slate-700 rounded-xl p-6">
+          <pre id="rpt-txt" class="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap overflow-x-auto"></pre>
         </div>
-      );
-    }
-
-    // ─── REPORT VIEW ───────────────────────────────────────────────────────────
-    function ReportView({ topic, difficulty, mode, messages, onNewSession, onHome }) {
-      const [report, setReport] = useState('');
-      const [loading, setLoading] = useState(true);
-      const [error, setError]   = useState(null);
-
-      const modeLabel = { learn: 'Learn Concept', flashcards: 'Flashcards', mcq: 'MCQ Practice' }[mode];
-      const exchanges = messages.filter(m => m.role === 'user').length;
-
-      useEffect(() => { generateReport(); }, []);
-
-      async function generateReport() {
-        setLoading(true);
-        setError(null);
-        try {
-          const res = await callClaude(buildReportPrompt(topic, mode, difficulty, messages));
-          setReport(res);
-        } catch (e) {
-          setError(e.message);
-        } finally {
-          setLoading(false);
-        }
-      }
-
-      return (
-        <div className="min-h-screen bg-slate-950 text-slate-100">
-          {/* Header */}
-          <div className="border-b border-slate-800 px-6 py-4">
-            <div className="max-w-3xl mx-auto flex items-center justify-between">
-              <div>
-                <h1 className="text-white font-semibold text-sm">Session Report</h1>
-                <p className="text-slate-500 text-xs mt-0.5">
-                  {topic.display} · {modeLabel} · {difficulty} · {exchanges} exchange{exchanges !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={onNewSession}
-                  className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition-colors"
-                >
-                  New session
-                </button>
-                <button
-                  onClick={onHome}
-                  className="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg transition-colors"
-                >
-                  Home
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="max-w-3xl mx-auto px-6 py-10">
-            {loading && (
-              <div className="flex flex-col items-center gap-4 py-20">
-                <div className="flex gap-1">
-                  <span className="dot w-2 h-2 bg-indigo-400 rounded-full inline-block" />
-                  <span className="dot w-2 h-2 bg-indigo-400 rounded-full inline-block" />
-                  <span className="dot w-2 h-2 bg-indigo-400 rounded-full inline-block" />
-                </div>
-                <p className="text-slate-400 text-sm">Generating your session report...</p>
-              </div>
-            )}
-
-            {error && (
-              <div className="space-y-4">
-                <ErrorBanner message={error} onRetry={generateReport} />
-              </div>
-            )}
-
-            {report && !loading && (
-              <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
-                <pre className="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap font-mono overflow-x-auto">
-                  {report}
-                </pre>
-              </div>
-            )}
-
-            {report && !loading && (
-              <div className="mt-8 flex justify-center">
-                <button
-                  onClick={onNewSession}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors"
-                >
-                  Practice again →
-                </button>
-              </div>
-            )}
-          </div>
+        <div id="rpt-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl"></div>
+        <div id="rpt-foot" style="display:none" class="mt-8 flex justify-center">
+          <button onclick="showSetup()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium">Practice again →</button>
         </div>
-      );
-    }
+      </div>
+    </div>`;
 
-    // ─── APP ROOT ──────────────────────────────────────────────────────────────
-    function App() {
-      const [view,       setView]    = useState('home');
-      const [topic,      setTopic]   = useState(null);
-      const [difficulty, setDiff]    = useState('Senior');
-      const [mode,       setMode]    = useState('learn');
-      const [messages,   setMsgs]    = useState([]);
+  try {
+    const res = await ask(buildReport());
+    $('rpt-load').style.display = 'none';
+    $('rpt-txt').textContent = res;
+    $('rpt-box').style.display = 'block';
+    $('rpt-foot').style.display = 'flex';
+  } catch(e) {
+    $('rpt-load').style.display = 'none';
+    $('rpt-err').style.display = 'block';
+    $('rpt-err').textContent = e.message;
+  }
+};
 
-      function goHome() {
-        setView('home');
-        setTopic(null);
-        setMsgs([]);
-      }
-
-      if (view === 'home') {
-        return (
-          <HomeView
-            onSelect={id => id === 'concept' && setView('setup')}
-          />
-        );
-      }
-
-      if (view === 'setup') {
-        return (
-          <ConceptSetupView
-            onBack={goHome}
-            onStart={(t, d, m) => {
-              setTopic(t); setDiff(d); setMode(m); setMsgs([]);
-              setView('session');
-            }}
-          />
-        );
-      }
-
-      if (view === 'session' && topic) {
-        return (
-          <SessionView
-            topic={topic}
-            difficulty={difficulty}
-            mode={mode}
-            onBack={() => setView('setup')}
-            onEnd={msgs => { setMsgs(msgs); setView('report'); }}
-          />
-        );
-      }
-
-      if (view === 'report' && topic) {
-        return (
-          <ReportView
-            topic={topic}
-            difficulty={difficulty}
-            mode={mode}
-            messages={messages}
-            onNewSession={() => setView('setup')}
-            onHome={goHome}
-          />
-        );
-      }
-
-      return null;
-    }
-
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-  </script>
+// ── Boot ──────────────────────────────────────────────────────────────────────
+showHome();
+</script>
 </body>
 </html>
