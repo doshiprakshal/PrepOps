@@ -206,7 +206,7 @@ Then ask if they're ready for the next question. Generate question 1 now.`,
       ).join('\n\n');
       const exchanges = history.filter(m => m.role === 'user').length;
 
-      return `Generate a PrepOps end-of-session report.
+      return `Generate a concise PrepOps session report.
 
 Topic: ${topic.display}
 Mode: ${modeLabel}
@@ -216,42 +216,31 @@ Exchanges: ${exchanges}
 Session transcript:
 ${transcript}
 
-${exchanges < 3 ? 'NOTE: The session was very short (< 3 exchanges). Prefix the report with a note about limited data.\n\n' : ''}Generate the report in this exact format. Preserve the box-drawing characters:
+${exchanges < 3 ? 'NOTE: Very short session (< 3 exchanges) — note this at the top.\n\n' : ''}Write the report in this exact format:
 
-╔══════════════════════════════════════════════════════════════════╗
-║  PrepOps  ·  Session Report                                      ║
-║  Topic: ${topic.display.slice(0, 38).padEnd(38)}  ·  ${level.padEnd(6)} ║
-╚══════════════════════════════════════════════════════════════════╝
+OVERALL ASSESSMENT
+[Hire signal: Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire]
+[One specific sentence explaining what drove that signal — cite the actual exchange, not a generic statement]
 
-  HIRE SIGNAL  ·  [Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire]
-  [One sentence explaining the signal — be specific about what drove it]
+STRENGTHS
+1. [Specific — name what they said or did correctly and why it matters]
+2. [Specific strength]
+3. [Specific strength — if session was too short for 3, write only what you have]
 
-  DIMENSION SCORES
+AREAS TO IMPROVE
+1. [Specific gap — name what was missing or wrong and the production implication]
+2. [Specific gap]
+3. [Specific gap — if session was too short for 3, write only what you have]
 
-  Technical Knowledge    [★ to ★★★★★]
-  → [Specific — name the exact exchange or what they said; no generic statements]
-
-  Production Thinking    [★ to ★★★★★]
-  → [Specific observation]
-
-  Communication          [★ to ★★★★★]
-  → [Specific observation]
-
-  WHAT LANDED
-  ✦ [The specific thing they did well — cite the actual answer or moment]
-  ✦ [Second strength if present; omit this line if session was too short]
-
-  GAPS IDENTIFIED
-  ✗ [The specific gap — name what was missing or incorrect and why it matters]
-
-  BEFORE YOUR NEXT SESSION
-  Study: [Specific concept or topic to review]
-  Practice: [Mode + topic recommendation for next session]
+NEXT SESSION
+Topic: [specific topic recommendation]
+Mode: [Learn Concept / Flashcards / MCQ Practice]
+Why: [One sentence — what this session revealed that makes this the right next step]
 
 Rules:
-- Be specific. Never write "shows promise" without naming the exact evidence.
-- HIRE SIGNAL must be one of the 5 exact options above.
-- Stars: ★☆☆☆☆ through ★★★★★.`;
+- Every point must be specific. Never write "shows promise" or "good effort" without naming the exact evidence.
+- Hire signal must be exactly one of the 5 options above.
+- Keep each line tight — one observation per line, no multi-sentence bullets.`;
     }
 
     // ─── AI integration ────────────────────────────────────────────────────────
@@ -616,28 +605,23 @@ Rules:
 
     // ─── SESSION VIEW ──────────────────────────────────────────────────────────
     function SessionView({ topic, difficulty, mode, onEnd, onBack }) {
+      const [started, setStarted]   = useState(false);
       const [messages, setMessages] = useState([]);
       const [input, setInput]       = useState('');
       const [loading, setLoading]   = useState(false);
       const [error, setError]       = useState(null);
       const bottomRef = useRef(null);
-      const startedRef = useRef(false);
 
       const modeLabel = { learn: 'Learn Concept', flashcards: 'Flashcards', mcq: 'MCQ Practice' }[mode];
+      const modeSub   = { learn: 'Socratic dialogue with follow-up questions', flashcards: 'Front/back cards, self-graded', mcq: 'Scenario-based MCQ with reasoning explanations' }[mode];
       const exchanges = messages.filter(m => m.role === 'user').length;
-
-      useEffect(() => {
-        if (!startedRef.current) {
-          startedRef.current = true;
-          initSession();
-        }
-      }, []);
 
       useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, [messages, loading]);
 
-      async function initSession() {
+      async function beginSession() {
+        setStarted(true);
         setLoading(true);
         setError(null);
         try {
@@ -675,6 +659,72 @@ Rules:
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
       }
 
+      // ── Pre-session review panel ─────────────────────────────────────────────
+      if (!started) {
+        return (
+          <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+            <div className="border-b border-slate-800 px-6 py-4">
+              <div className="max-w-xl mx-auto flex items-center gap-4">
+                <button onClick={onBack} className="text-slate-400 hover:text-white text-sm transition-colors">
+                  ← Back
+                </button>
+                <div className="w-px h-4 bg-slate-700" />
+                <span className="text-white font-semibold text-sm">Session Review</span>
+              </div>
+            </div>
+
+            <div className="flex-1 flex items-center justify-center px-6 py-16">
+              <div className="w-full max-w-xl">
+                <p className="text-slate-400 text-sm mb-6">Review your session settings before starting.</p>
+
+                {/* Settings summary */}
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden mb-6">
+                  <div className="px-5 py-4 border-b border-slate-800 flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Topic</div>
+                      <div className="text-white font-semibold text-base">{topic.display}</div>
+                    </div>
+                    <CoverageBadge coverage={topic.coverage} />
+                  </div>
+                  <div className="grid grid-cols-2 divide-x divide-slate-800">
+                    <div className="px-5 py-4">
+                      <div className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Difficulty</div>
+                      <div className="text-white font-medium">{difficulty}</div>
+                    </div>
+                    <div className="px-5 py-4">
+                      <div className="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Mode</div>
+                      <div className="text-white font-medium">{modeLabel}</div>
+                      <div className="text-slate-500 text-xs mt-0.5">{modeSub}</div>
+                    </div>
+                  </div>
+                  {topic.coverage === 'none' && (
+                    <div className="px-5 py-3 bg-amber-950/40 border-t border-amber-900/50">
+                      <p className="text-amber-400 text-xs">
+                        ⚠ No structured curriculum for this topic — PrepOps will use general knowledge.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={beginSession}
+                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-sm transition-colors"
+                >
+                  Begin Session →
+                </button>
+                <button
+                  onClick={onBack}
+                  className="w-full mt-3 py-2.5 text-slate-500 hover:text-slate-300 text-sm transition-colors"
+                >
+                  ← Change settings
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ── Live session ─────────────────────────────────────────────────────────
       return (
         <div className="flex flex-col h-screen bg-slate-950 text-slate-100">
 
@@ -684,16 +734,7 @@ Rules:
               <button onClick={onBack} className="text-slate-500 hover:text-white text-sm transition-colors flex-shrink-0">
                 ←
               </button>
-              <div className="min-w-0">
-                <div className="text-white text-sm font-medium truncate">{topic.display}</div>
-                <div className="text-slate-500 text-xs flex items-center gap-1.5 mt-0.5">
-                  <span>{modeLabel}</span>
-                  <span>·</span>
-                  <span>{difficulty}</span>
-                  <span>·</span>
-                  <CoverageBadge coverage={topic.coverage} />
-                </div>
-              </div>
+              <span className="text-white text-sm font-medium truncate">{topic.display}</span>
             </div>
             <button
               onClick={() => onEnd(messages)}
@@ -705,7 +746,18 @@ Rules:
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto hide-scrollbar">
-            <div className="max-w-3xl mx-auto px-4 py-6">
+            <div className="max-w-3xl mx-auto px-4 pt-4 pb-6">
+
+              {/* Session context strip */}
+              <div className="mb-5 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap text-xs text-slate-400">
+                <span className="font-medium text-slate-300">{modeLabel}</span>
+                <span className="text-slate-700">·</span>
+                <span>{difficulty}</span>
+                <span className="text-slate-700">·</span>
+                <CoverageBadge coverage={topic.coverage} />
+                <span className="ml-auto text-slate-600">{exchanges} exchange{exchanges !== 1 ? 's' : ''}</span>
+              </div>
+
               {messages.length === 0 && !loading && !error && (
                 <div className="text-slate-600 text-sm text-center mt-16">Starting session...</div>
               )}
@@ -714,7 +766,7 @@ Rules:
               {error && (
                 <ErrorBanner
                   message={error}
-                  onRetry={messages.length === 0 ? initSession : null}
+                  onRetry={messages.length === 0 ? beginSession : null}
                 />
               )}
               <div ref={bottomRef} />
@@ -741,14 +793,9 @@ Rules:
                 Send
               </button>
             </div>
-            <div className="max-w-3xl mx-auto mt-2 flex justify-between items-center">
-              <span className="text-xs text-slate-700">
-                {exchanges} exchange{exchanges !== 1 ? 's' : ''}
-              </span>
-              <span className="text-xs text-slate-700">
-                Responses billed to your Claude.ai account
-              </span>
-            </div>
+            <p className="max-w-3xl mx-auto mt-2 text-right text-xs text-slate-700">
+              Responses billed to your Claude.ai account
+            </p>
           </div>
 
         </div>
