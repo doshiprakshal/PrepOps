@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PrepOps</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { background: #020617; margin: 0; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    @keyframes bounce-dot {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-6px); }
+    }
+    .dot { animation: bounce-dot 1.2s infinite ease-in-out; }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // ─── Knowledge Coverage Map ────────────────────────────────────────────────
+    // Derived from templates/knowledge_mapping.yaml
+    const TOPICS = [
+      { slug: 'kubernetes',              display: 'Kubernetes — Pods & Workloads',     domain: 'Kubernetes',       coverage: 'full' },
+      { slug: 'kubernetes_networking',   display: 'Kubernetes — Networking & CNI',     domain: 'Kubernetes',       coverage: 'full' },
+      { slug: 'kubernetes_services',     display: 'Kubernetes — Services & DNS',       domain: 'Kubernetes',       coverage: 'full' },
+      { slug: 'helm',                    display: 'Helm',                              domain: 'Kubernetes',       coverage: 'none' },
+      { slug: 'linux',                   display: 'Linux — Processes & Systemd',       domain: 'Linux',            coverage: 'full' },
+      { slug: 'linux_performance',       display: 'Linux — Performance & Profiling',   domain: 'Linux',            coverage: 'full' },
+      { slug: 'linux_filesystems',       display: 'Linux — Filesystems & Storage',     domain: 'Linux',            coverage: 'full' },
+      { slug: 'terraform',               display: 'Terraform — State & Backends',      domain: 'Terraform',        coverage: 'full' },
+      { slug: 'terraform_modules',       display: 'Terraform — Modules & Reuse',       domain: 'Terraform',        coverage: 'full' },
+      { slug: 'terraform_drift',         display: 'Terraform — Drift & Import',        domain: 'Terraform',        coverage: 'full' },
+      { slug: 'aws_iam',                 display: 'AWS — IAM & Permissions',           domain: 'AWS',              coverage: 'full' },
+      { slug: 'aws_autoscaling',         display: 'AWS — Auto Scaling',                domain: 'AWS',              coverage: 'full' },
+      { slug: 'aws_load_balancing',      display: 'AWS — Load Balancing',              domain: 'AWS',              coverage: 'full' },
+      { slug: 'networking_dns',          display: 'Networking — DNS',                  domain: 'Networking',       coverage: 'full' },
+      { slug: 'networking_tcp',          display: 'Networking — TCP & Tuning',         domain: 'Networking',       coverage: 'full' },
+      { slug: 'networking_load_balancing', display: 'Networking — Load Balancing',     domain: 'Networking',       coverage: 'full' },
+      { slug: 'sre_slos',                display: 'SRE — SLOs & Error Budgets',        domain: 'SRE',              coverage: 'full' },
+      { slug: 'sre_incident_response',   display: 'SRE — Incident Response',           domain: 'SRE',              coverage: 'full' },
+      { slug: 'sre_reliability',         display: 'SRE — Reliability Patterns',        domain: 'SRE',              coverage: 'full' },
+      { slug: 'gcp',                     display: 'Google Cloud Platform',             domain: 'Cloud',            coverage: 'none' },
+      { slug: 'docker',                  display: 'Docker & Containers',               domain: 'Containers',       coverage: 'none' },
+      { slug: 'prometheus',              display: 'Prometheus & Alerting',             domain: 'Observability',    coverage: 'none' },
+      { slug: 'grafana',                 display: 'Grafana',                           domain: 'Observability',    coverage: 'none' },
+      { slug: 'cicd',                    display: 'CI/CD Pipelines',                   domain: 'Engineering',      coverage: 'none' },
+      { slug: 'platform_engineering',    display: 'Platform Engineering',              domain: 'Engineering',      coverage: 'none' },
+      { slug: 'mlops',                   display: 'MLOps',                             domain: 'AI/ML',            coverage: 'none' },
+      { slug: 'aiops',                   display: 'AIOps',                             domain: 'AI/ML',            coverage: 'none' },
+      { slug: 'troubleshooting',         display: 'General Troubleshooting',           domain: 'SRE',              coverage: 'none' },
+      { slug: 'coding',                  display: 'Coding & Scripting',                domain: 'Engineering',      coverage: 'none' },
+      { slug: 'behavioral',              display: 'Behavioral / Leadership Principles',domain: 'Soft Skills',      coverage: 'none' },
+    ];
+
+    // ─── Home Screen Flows ─────────────────────────────────────────────────────
+    const FLOWS = [
+      {
+        id: 'concept', stage: 1, available: true,
+        icon: '📚', title: 'Concept Prep',
+        description: 'Adaptive Socratic teaching, flashcards, and MCQ for any infrastructure topic.',
+        cta: 'Choose a topic →',
+      },
+      {
+        id: 'incident', stage: 2, available: false,
+        icon: '🚨', title: 'Production Scenarios',
+        description: 'Live incident simulation — you\'re on-call, PrepOps responds as the terminal.',
+      },
+      {
+        id: 'debugging', stage: 2, available: false,
+        icon: '🔬', title: 'Debugging Lab',
+        description: 'Broken configs and outputs — diagnose root cause and propose a fix.',
+      },
+      {
+        id: 'coding', stage: 2, available: false,
+        icon: '⚡', title: 'Coding Reasoning',
+        description: 'Problem walkthrough: approach, complexity, communication, optimal reveal.',
+      },
+      {
+        id: 'mock', stage: 3, available: false,
+        icon: '🎯', title: 'Mock Interview',
+        description: 'Full persona-driven interview with hiring-signal feedback at the end.',
+      },
+      {
+        id: 'design', stage: 3, available: false,
+        icon: '🏗️', title: 'System Design',
+        description: 'Design an infrastructure system end-to-end with adversarial follow-ups.',
+      },
+      {
+        id: 'jd', stage: 4, available: false,
+        icon: '📋', title: 'JD-Driven Prep',
+        description: 'Paste a job description — PrepOps generates your full personalized prep plan.',
+      },
+    ];
+
+    // ─── PrepOps Engine Prompts ────────────────────────────────────────────────
+    const CORE = `You are PrepOps, an AI interview coach for Infrastructure, DevOps, SRE, Cloud, and Platform Engineering roles.
+
+Core philosophy:
+- Train reasoning and production thinking — never memorization of facts
+- Ask follow-up questions the way a real technical interviewer would
+- Surface misconceptions actively — name them when you see them
+- Give honest, specific feedback; never say "good effort" without naming exactly what was good
+- Frame feedback as hiring signal: Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire
+
+You simulate a rigorous technical interview environment. Be direct, specific, and production-grounded.
+Keep responses conversational — this is dialogue, not a lecture. Max 3 sentences before a follow-up question.`;
+
+    const MODE_INSTRUCTIONS = {
+      learn: (topic, level, coverageNote) =>
+`Mode: Learn Concept
+Topic: ${topic}
+Level: ${level}
+${coverageNote}
+
+Run an adaptive Socratic teaching session.
+
+1. Open with ONE concrete, production-grounded question to probe the user's current understanding.
+   Do NOT ask "what is X." Instead: "Walk me through what happens when..." or "When would you choose X over Y?"
+2. Based on their answer, probe deeper (if strong) or fill the gap (if weak). One follow-up at a time.
+3. After 5-7 exchanges, surface the key misconception most engineers have about this topic.
+
+Keep responses tight. Ask your opening question now.`,
+
+      flashcards: (topic, level, coverageNote) =>
+`Mode: Flashcards
+Topic: ${topic}
+Level: ${level}
+${coverageNote}
+
+Generate one flashcard at a time. Wait for the user's response before showing the back.
+
+Card format — show only the FRONT first:
+
+FRONT: [Production-grounded question. Test "why" and "what breaks" — not definitions.
+Examples: "What's the first thing you check when pods are crashing with OOMKilled?"
+or "What breaks in a Kubernetes cluster if you delete the kube-proxy DaemonSet?"]
+
+After the user responds, show the BACK:
+
+BACK: [2-4 sentence answer. The key insight + why it matters in production. Not a definition.]
+
+Then ask: "How'd that go? Got it / Almost / Missed it"
+
+Adjust difficulty based on their self-grade. After 5 cards, briefly note their pattern.
+Start with card 1 now — show only the FRONT.`,
+
+      mcq: (topic, level, coverageNote) =>
+`Mode: MCQ Practice
+Topic: ${topic}
+Level: ${level}
+${coverageNote}
+
+Generate one scenario-based MCQ at a time.
+
+Format:
+Q: [Scenario — NOT a definition. "You notice X symptom, what's the most likely cause?" or
+"Your team must choose between A and B for this scenario — which do you pick?"]
+
+A) ...
+B) ...
+C) ...
+D) ...
+
+Wait for their answer, then:
+1. Name the correct answer (A/B/C/D)
+2. Explain WHY it's correct — the principle, not just the fact
+3. Explain what makes the wrong options wrong
+4. State the production implication
+
+Then ask if they're ready for the next question. Generate question 1 now.`,
+    };
+
+    function coverageNote(topic) {
+      return topic.coverage === 'full'
+        ? `PrepOps has a full structured curriculum for "${topic.display}" — use production-grounded questions, common misconceptions, and real debugging scenarios from that domain.`
+        : `PrepOps does not have a structured curriculum for "${topic.display}". Draw on general knowledge and be upfront about it.`;
+    }
+
+    function buildInitPrompt(topic, mode, level) {
+      const instructions = MODE_INSTRUCTIONS[mode](topic.display, level, coverageNote(topic));
+      return `${CORE}\n\n${instructions}\n\nPrepOps:`;
+    }
+
+    function buildTurnPrompt(topic, mode, level, history, userMessage) {
+      const instructions = MODE_INSTRUCTIONS[mode](topic.display, level, coverageNote(topic));
+      const historyText = history.map(m =>
+        `${m.role === 'user' ? 'User' : 'PrepOps'}: ${m.content}`
+      ).join('\n\n');
+      return `${CORE}\n\n${instructions}\n\nConversation so far:\n${historyText}\n\nUser: ${userMessage}\n\nPrepOps:`;
+    }
+
+    function buildReportPrompt(topic, mode, level, history) {
+      const modeLabel = { learn: 'Learn Concept', flashcards: 'Flashcards', mcq: 'MCQ Practice' }[mode];
+      const transcript = history.map(m =>
+        `${m.role === 'user' ? 'User' : 'PrepOps'}: ${m.content}`
+      ).join('\n\n');
+      const exchanges = history.filter(m => m.role === 'user').length;
+
+      return `Generate a PrepOps end-of-session report.
+
+Topic: ${topic.display}
+Mode: ${modeLabel}
+Level: ${level}
+Exchanges: ${exchanges}
+
+Session transcript:
+${transcript}
+
+${exchanges < 3 ? 'NOTE: The session was very short (< 3 exchanges). Prefix the report with a note about limited data.\n\n' : ''}Generate the report in this exact format. Preserve the box-drawing characters:
+
+╔══════════════════════════════════════════════════════════════════╗
+║  PrepOps  ·  Session Report                                      ║
+║  Topic: ${topic.display.slice(0, 38).padEnd(38)}  ·  ${level.padEnd(6)} ║
+╚══════════════════════════════════════════════════════════════════╝
+
+  HIRE SIGNAL  ·  [Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire]
+  [One sentence explaining the signal — be specific about what drove it]
+
+  DIMENSION SCORES
+
+  Technical Knowledge    [★ to ★★★★★]
+  → [Specific — name the exact exchange or what they said; no generic statements]
+
+  Production Thinking    [★ to ★★★★★]
+  → [Specific observation]
+
+  Communication          [★ to ★★★★★]
+  → [Specific observation]
+
+  WHAT LANDED
+  ✦ [The specific thing they did well — cite the actual answer or moment]
+  ✦ [Second strength if present; omit this line if session was too short]
+
+  GAPS IDENTIFIED
+  ✗ [The specific gap — name what was missing or incorrect and why it matters]
+
+  BEFORE YOUR NEXT SESSION
+  Study: [Specific concept or topic to review]
+  Practice: [Mode + topic recommendation for next session]
+
+Rules:
+- Be specific. Never write "shows promise" without naming the exact evidence.
+- HIRE SIGNAL must be one of the 5 exact options above.
+- Stars: ★☆☆☆☆ through ★★★★★.`;
+    }
+
+    // ─── AI integration ────────────────────────────────────────────────────────
+    function claudeAvailable() {
+      return typeof window !== 'undefined' &&
+        typeof window.claude !== 'undefined' &&
+        typeof window.claude.complete === 'function';
+    }
+
+    async function callClaude(prompt) {
+      if (!claudeAvailable()) {
+        throw new Error('Claude is not available. Open this file as an artifact in Claude.ai.');
+      }
+      return await window.claude.complete(prompt);
+    }
+
+    // ─── Small components ──────────────────────────────────────────────────────
+    function CoverageBadge({ coverage }) {
+      if (coverage === 'full') {
+        return (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md border bg-emerald-950 border-emerald-800 text-emerald-400 font-medium">
+            ✓ Full curriculum
+          </span>
+        );
+      }
+      return (
+        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md border bg-amber-950 border-amber-800 text-amber-400 font-medium">
+          ⚠ General knowledge
+        </span>
+      );
+    }
+
+    function TypingDots() {
+      return (
+        <div className="flex items-center gap-2 px-4 py-3 text-slate-400 text-sm">
+          <span className="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">P</span>
+          <span>PrepOps is thinking</span>
+          <span className="flex gap-0.5 ml-0.5">
+            <span className="dot w-1.5 h-1.5 bg-indigo-400 rounded-full inline-block" />
+            <span className="dot w-1.5 h-1.5 bg-indigo-400 rounded-full inline-block" />
+            <span className="dot w-1.5 h-1.5 bg-indigo-400 rounded-full inline-block" />
+          </span>
+        </div>
+      );
+    }
+
+    function Bubble({ msg }) {
+      const isUser = msg.role === 'user';
+      return (
+        <div className={`flex mb-5 ${isUser ? 'justify-end' : 'justify-start'}`}>
+          {!isUser && (
+            <div className="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white mr-2.5 mt-0.5 flex-shrink-0">
+              P
+            </div>
+          )}
+          <div
+            className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+              isUser
+                ? 'bg-indigo-600 text-white rounded-2xl rounded-br-sm'
+                : 'bg-slate-800 text-slate-100 rounded-2xl rounded-bl-sm border border-slate-700'
+            }`}
+          >
+            {msg.content}
+          </div>
+          {isUser && (
+            <div className="w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white ml-2.5 mt-0.5 flex-shrink-0">
+              U
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function ErrorBanner({ message, onRetry }) {
+      return (
+        <div className="mx-4 mb-4 bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl flex items-center justify-between">
+          <span>{message}</span>
+          {onRetry && (
+            <button onClick={onRetry} className="ml-4 text-red-400 hover:text-red-200 underline text-xs flex-shrink-0">
+              Retry
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    // ─── HOME VIEW ─────────────────────────────────────────────────────────────
+    function HomeView({ onSelect }) {
+      const available = claudeAvailable();
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100">
+          {/* Header */}
+          <div className="border-b border-slate-800 px-6 py-4">
+            <div className="max-w-5xl mx-auto flex items-center justify-between">
+              <div>
+                <span className="text-white font-bold text-lg tracking-tight">PrepOps</span>
+                <span className="text-slate-500 text-xs ml-3">Infrastructure · DevOps · SRE · Cloud</span>
+              </div>
+              {!available && (
+                <div className="text-xs bg-amber-950 border border-amber-800 text-amber-400 px-3 py-1.5 rounded-lg">
+                  ⚠ Open in Claude.ai to enable AI
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Hero */}
+          <div className="max-w-5xl mx-auto px-6 pt-12 pb-8">
+            <h1 className="text-3xl font-bold text-white mb-3 tracking-tight">
+              What would you like to practice?
+            </h1>
+            <p className="text-slate-400 text-base">
+              Adaptive coaching, production scenarios, and hiring-signal feedback — built for infrastructure engineers.
+            </p>
+          </div>
+
+          {/* Flow grid */}
+          <div className="max-w-5xl mx-auto px-6 pb-16">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {FLOWS.map(flow => (
+                <button
+                  key={flow.id}
+                  onClick={() => flow.available && onSelect(flow.id)}
+                  disabled={!flow.available}
+                  className={[
+                    'relative text-left p-5 rounded-xl border transition-all duration-150',
+                    flow.available
+                      ? 'bg-slate-900 border-slate-700 hover:border-indigo-500 hover:bg-slate-800/80 cursor-pointer group'
+                      : 'bg-slate-900/40 border-slate-800/60 cursor-not-allowed',
+                  ].join(' ')}
+                >
+                  {/* Stage badge for unavailable */}
+                  {!flow.available && (
+                    <span className="absolute top-3 right-3 text-xs text-slate-600 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">
+                      Stage {flow.stage}
+                    </span>
+                  )}
+
+                  <div className="text-2xl mb-3">{flow.icon}</div>
+                  <h3 className={`font-semibold text-sm mb-1.5 ${flow.available ? 'text-white group-hover:text-indigo-300' : 'text-slate-500'}`}>
+                    {flow.title}
+                  </h3>
+                  <p className={`text-xs leading-relaxed ${flow.available ? 'text-slate-400' : 'text-slate-600'}`}>
+                    {flow.description}
+                  </p>
+                  {flow.available && (
+                    <div className="mt-4 text-indigo-400 text-xs font-medium group-hover:text-indigo-300 flex items-center gap-1">
+                      {flow.cta}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <p className="mt-8 text-center text-slate-600 text-xs">
+              PrepOps trains reasoning, not memorization · AI responses billed to your Claude.ai account
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── CONCEPT SETUP VIEW ────────────────────────────────────────────────────
+    const DIFFICULTIES = [
+      { id: 'Junior',    label: 'Junior' },
+      { id: 'Mid',       label: 'Mid' },
+      { id: 'Senior',    label: 'Senior' },
+      { id: 'Staff',     label: 'Staff' },
+    ];
+
+    const MODES = [
+      {
+        id: 'learn',
+        label: 'Learn Concept',
+        sub: 'Socratic dialogue — PrepOps questions until you can explain it cold',
+      },
+      {
+        id: 'flashcards',
+        label: 'Flashcards',
+        sub: 'Front/back cards, self-graded — builds recall under interview pressure',
+      },
+      {
+        id: 'mcq',
+        label: 'MCQ Practice',
+        sub: 'Scenario-based multiple choice with full reasoning explanations',
+      },
+    ];
+
+    function ConceptSetupView({ onStart, onBack }) {
+      const [query, setQuery]         = useState('');
+      const [topic, setTopic]         = useState(null);
+      const [showDrop, setShowDrop]   = useState(false);
+      const [difficulty, setDiff]     = useState('Senior');
+      const [mode, setMode]           = useState('learn');
+      const inputRef = useRef(null);
+
+      const filtered = query.length === 0
+        ? TOPICS.filter(t => t.coverage === 'full').slice(0, 9)
+        : TOPICS.filter(t =>
+            t.display.toLowerCase().includes(query.toLowerCase()) ||
+            t.domain.toLowerCase().includes(query.toLowerCase())
+          ).slice(0, 8);
+
+      const customOption = query.trim() &&
+        !TOPICS.find(t => t.display.toLowerCase() === query.trim().toLowerCase());
+
+      function pick(t) {
+        setTopic(t);
+        setQuery(t.display);
+        setShowDrop(false);
+      }
+
+      function pickCustom() {
+        const t = { slug: 'custom', display: query.trim(), domain: 'Custom', coverage: 'none' };
+        setTopic(t);
+        setShowDrop(false);
+      }
+
+      const canStart = !!topic;
+
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100">
+          {/* Header */}
+          <div className="border-b border-slate-800 px-6 py-4">
+            <div className="max-w-2xl mx-auto flex items-center gap-4">
+              <button onClick={onBack} className="text-slate-400 hover:text-white text-sm transition-colors flex items-center gap-1">
+                ← Back
+              </button>
+              <div className="w-px h-4 bg-slate-700" />
+              <span className="text-white font-semibold text-sm">Concept Prep</span>
+            </div>
+          </div>
+
+          <div className="max-w-2xl mx-auto px-6 py-10 space-y-10">
+
+            {/* Topic picker */}
+            <div>
+              <label className="block text-sm font-medium text-slate-200 mb-3">
+                What would you like to study?
+              </label>
+              <div className="relative">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={e => { setQuery(e.target.value); setTopic(null); setShowDrop(true); }}
+                  onFocus={() => setShowDrop(true)}
+                  onBlur={() => setTimeout(() => setShowDrop(false), 160)}
+                  placeholder="Search topics, or type anything..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 pr-40 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                />
+                {topic && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <CoverageBadge coverage={topic.coverage} />
+                  </div>
+                )}
+
+                {/* Dropdown */}
+                {showDrop && (
+                  <div className="absolute z-20 w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                    {filtered.map((t, i) => (
+                      <button
+                        key={t.slug}
+                        onMouseDown={() => pick(t)}
+                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 transition-colors ${i < filtered.length - 1 || customOption ? 'border-b border-slate-800' : ''}`}
+                      >
+                        <span>
+                          <span className="text-white">{t.display}</span>
+                          <span className="text-slate-600 text-xs ml-2">{t.domain}</span>
+                        </span>
+                        <CoverageBadge coverage={t.coverage} />
+                      </button>
+                    ))}
+                    {customOption && (
+                      <button
+                        onMouseDown={pickCustom}
+                        className="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 bg-slate-800/40 transition-colors"
+                      >
+                        <span className="text-indigo-400">Use "{query.trim()}" as custom topic</span>
+                        <CoverageBadge coverage="none" />
+                      </button>
+                    )}
+                    {filtered.length === 0 && !customOption && (
+                      <div className="px-4 py-3 text-slate-500 text-sm">No matches found</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Coverage note */}
+              {topic && (
+                <p className="mt-2 text-xs text-slate-500">
+                  {topic.coverage === 'full'
+                    ? '✅ Full PrepOps curriculum — structured concepts, misconceptions, and production scenarios.'
+                    : '⚠ General knowledge mode — no PrepOps curriculum for this topic yet. AI draws on broad knowledge.'}
+                </p>
+              )}
+            </div>
+
+            {/* Difficulty */}
+            <div>
+              <label className="block text-sm font-medium text-slate-200 mb-3">Difficulty</label>
+              <div className="flex gap-2 flex-wrap">
+                {DIFFICULTIES.map(d => (
+                  <button
+                    key={d.id}
+                    onClick={() => setDiff(d.id)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all border ${
+                      difficulty === d.id
+                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Mode */}
+            <div>
+              <label className="block text-sm font-medium text-slate-200 mb-3">Mode</label>
+              <div className="space-y-2">
+                {MODES.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setMode(m.id)}
+                    className={`w-full text-left px-4 py-3.5 rounded-xl border transition-all ${
+                      mode === m.id
+                        ? 'bg-indigo-950 border-indigo-600'
+                        : 'bg-slate-900 border-slate-700 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className={`text-sm font-medium ${mode === m.id ? 'text-indigo-300' : 'text-slate-300'}`}>
+                      {m.label}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">{m.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Start */}
+            <button
+              onClick={() => canStart && onStart(topic, difficulty, mode)}
+              disabled={!canStart}
+              className={`w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${
+                canStart
+                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                  : 'bg-slate-800 text-slate-600 cursor-not-allowed'
+              }`}
+            >
+              {canStart
+                ? `Start ${MODES.find(m => m.id === mode)?.label} →`
+                : 'Select a topic to continue'}
+            </button>
+
+          </div>
+        </div>
+      );
+    }
+
+    // ─── SESSION VIEW ──────────────────────────────────────────────────────────
+    function SessionView({ topic, difficulty, mode, onEnd, onBack }) {
+      const [messages, setMessages] = useState([]);
+      const [input, setInput]       = useState('');
+      const [loading, setLoading]   = useState(false);
+      const [error, setError]       = useState(null);
+      const bottomRef = useRef(null);
+      const startedRef = useRef(false);
+
+      const modeLabel = { learn: 'Learn Concept', flashcards: 'Flashcards', mcq: 'MCQ Practice' }[mode];
+      const exchanges = messages.filter(m => m.role === 'user').length;
+
+      useEffect(() => {
+        if (!startedRef.current) {
+          startedRef.current = true;
+          initSession();
+        }
+      }, []);
+
+      useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [messages, loading]);
+
+      async function initSession() {
+        setLoading(true);
+        setError(null);
+        try {
+          const res = await callClaude(buildInitPrompt(topic, mode, difficulty));
+          setMessages([{ role: 'assistant', content: res }]);
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      async function send() {
+        const text = input.trim();
+        if (!text || loading) return;
+        setInput('');
+        setError(null);
+
+        const next = [...messages, { role: 'user', content: text }];
+        setMessages(next);
+        setLoading(true);
+
+        try {
+          const res = await callClaude(buildTurnPrompt(topic, mode, difficulty, messages, text));
+          setMessages([...next, { role: 'assistant', content: res }]);
+        } catch (e) {
+          setError(e.message);
+          setMessages(next);
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      function onKey(e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+      }
+
+      return (
+        <div className="flex flex-col h-screen bg-slate-950 text-slate-100">
+
+          {/* Top bar */}
+          <div className="flex-shrink-0 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <button onClick={onBack} className="text-slate-500 hover:text-white text-sm transition-colors flex-shrink-0">
+                ←
+              </button>
+              <div className="min-w-0">
+                <div className="text-white text-sm font-medium truncate">{topic.display}</div>
+                <div className="text-slate-500 text-xs flex items-center gap-1.5 mt-0.5">
+                  <span>{modeLabel}</span>
+                  <span>·</span>
+                  <span>{difficulty}</span>
+                  <span>·</span>
+                  <CoverageBadge coverage={topic.coverage} />
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => onEnd(messages)}
+              className="flex-shrink-0 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              End session →
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto hide-scrollbar">
+            <div className="max-w-3xl mx-auto px-4 py-6">
+              {messages.length === 0 && !loading && !error && (
+                <div className="text-slate-600 text-sm text-center mt-16">Starting session...</div>
+              )}
+              {messages.map((m, i) => <Bubble key={i} msg={m} />)}
+              {loading && <TypingDots />}
+              {error && (
+                <ErrorBanner
+                  message={error}
+                  onRetry={messages.length === 0 ? initSession : null}
+                />
+              )}
+              <div ref={bottomRef} />
+            </div>
+          </div>
+
+          {/* Input */}
+          <div className="flex-shrink-0 border-t border-slate-800 px-4 py-4">
+            <div className="max-w-3xl mx-auto flex gap-3">
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={onKey}
+                disabled={loading}
+                rows={2}
+                placeholder="Your answer... (Enter to send, Shift+Enter for newline)"
+                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none disabled:opacity-50"
+              />
+              <button
+                onClick={send}
+                disabled={!input.trim() || loading}
+                className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 rounded-xl text-sm font-medium transition-colors"
+              >
+                Send
+              </button>
+            </div>
+            <div className="max-w-3xl mx-auto mt-2 flex justify-between items-center">
+              <span className="text-xs text-slate-700">
+                {exchanges} exchange{exchanges !== 1 ? 's' : ''}
+              </span>
+              <span className="text-xs text-slate-700">
+                Responses billed to your Claude.ai account
+              </span>
+            </div>
+          </div>
+
+        </div>
+      );
+    }
+
+    // ─── REPORT VIEW ───────────────────────────────────────────────────────────
+    function ReportView({ topic, difficulty, mode, messages, onNewSession, onHome }) {
+      const [report, setReport] = useState('');
+      const [loading, setLoading] = useState(true);
+      const [error, setError]   = useState(null);
+
+      const modeLabel = { learn: 'Learn Concept', flashcards: 'Flashcards', mcq: 'MCQ Practice' }[mode];
+      const exchanges = messages.filter(m => m.role === 'user').length;
+
+      useEffect(() => { generateReport(); }, []);
+
+      async function generateReport() {
+        setLoading(true);
+        setError(null);
+        try {
+          const res = await callClaude(buildReportPrompt(topic, mode, difficulty, messages));
+          setReport(res);
+        } catch (e) {
+          setError(e.message);
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      return (
+        <div className="min-h-screen bg-slate-950 text-slate-100">
+          {/* Header */}
+          <div className="border-b border-slate-800 px-6 py-4">
+            <div className="max-w-3xl mx-auto flex items-center justify-between">
+              <div>
+                <h1 className="text-white font-semibold text-sm">Session Report</h1>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  {topic.display} · {modeLabel} · {difficulty} · {exchanges} exchange{exchanges !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={onNewSession}
+                  className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  New session
+                </button>
+                <button
+                  onClick={onHome}
+                  className="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg transition-colors"
+                >
+                  Home
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-3xl mx-auto px-6 py-10">
+            {loading && (
+              <div className="flex flex-col items-center gap-4 py-20">
+                <div className="flex gap-1">
+                  <span className="dot w-2 h-2 bg-indigo-400 rounded-full inline-block" />
+                  <span className="dot w-2 h-2 bg-indigo-400 rounded-full inline-block" />
+                  <span className="dot w-2 h-2 bg-indigo-400 rounded-full inline-block" />
+                </div>
+                <p className="text-slate-400 text-sm">Generating your session report...</p>
+              </div>
+            )}
+
+            {error && (
+              <div className="space-y-4">
+                <ErrorBanner message={error} onRetry={generateReport} />
+              </div>
+            )}
+
+            {report && !loading && (
+              <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
+                <pre className="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap font-mono overflow-x-auto">
+                  {report}
+                </pre>
+              </div>
+            )}
+
+            {report && !loading && (
+              <div className="mt-8 flex justify-center">
+                <button
+                  onClick={onNewSession}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                >
+                  Practice again →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── APP ROOT ──────────────────────────────────────────────────────────────
+    function App() {
+      const [view,       setView]    = useState('home');
+      const [topic,      setTopic]   = useState(null);
+      const [difficulty, setDiff]    = useState('Senior');
+      const [mode,       setMode]    = useState('learn');
+      const [messages,   setMsgs]    = useState([]);
+
+      function goHome() {
+        setView('home');
+        setTopic(null);
+        setMsgs([]);
+      }
+
+      if (view === 'home') {
+        return (
+          <HomeView
+            onSelect={id => id === 'concept' && setView('setup')}
+          />
+        );
+      }
+
+      if (view === 'setup') {
+        return (
+          <ConceptSetupView
+            onBack={goHome}
+            onStart={(t, d, m) => {
+              setTopic(t); setDiff(d); setMode(m); setMsgs([]);
+              setView('session');
+            }}
+          />
+        );
+      }
+
+      if (view === 'session' && topic) {
+        return (
+          <SessionView
+            topic={topic}
+            difficulty={difficulty}
+            mode={mode}
+            onBack={() => setView('setup')}
+            onEnd={msgs => { setMsgs(msgs); setView('report'); }}
+          />
+        );
+      }
+
+      if (view === 'report' && topic) {
+        return (
+          <ReportView
+            topic={topic}
+            difficulty={difficulty}
+            mode={mode}
+            messages={messages}
+            onNewSession={() => setView('setup')}
+            onHome={goHome}
+          />
+        );
+      }
+
+      return null;
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
