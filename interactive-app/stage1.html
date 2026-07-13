@@ -4,7 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PrepOps</title>
+  <script>
+    window.__origWarn = console.warn.bind(console);
+    console.warn = (...a) => {
+      if (typeof a[0] === 'string' && a[0].includes('cdn.tailwindcss.com')) return;
+      window.__origWarn(...a);
+    };
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>console.warn = window.__origWarn; delete window.__origWarn;</script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
