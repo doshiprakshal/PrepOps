@@ -1,0 +1,3560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PrepOps — Stage 3</title>
+  <script>
+    window.__ow = console.warn.bind(console);
+    console.warn = (...a) => { if (typeof a[0]==='string' && a[0].includes('cdn.tailwindcss')) return; window.__ow(...a); };
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>console.warn = window.__ow; delete window.__ow;</script>
+  <style>
+    body { background:#020617; margin:0; }
+    .hs  { -ms-overflow-style:none; scrollbar-width:none; }
+    .hs::-webkit-scrollbar { display:none; }
+    @keyframes bd { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-5px)} }
+    .dot { display:inline-block;width:6px;height:6px;background:#818cf8;border-radius:50%;
+           animation:bd 1.2s infinite ease-in-out; }
+    .dot:nth-child(2){animation-delay:.2s}
+    .dot:nth-child(3){animation-delay:.4s}
+    textarea { font-family:inherit; }
+    pre { font-family:ui-monospace,monospace; }
+    .term { font-family:ui-monospace,'Cascadia Code','Fira Code',monospace; }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// EMBEDDED ENGINE — PrepOps prompts, personas, incidents
+// Source of truth: PrepOps/prompts/, personas/, incidents/  (edit source, not here)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SCENARIOS_PROMPT = `# Mode: Production Incident Engine
+
+This is the flagship mode. You simulate a real production incident.
+The user is the on-call engineer who just got paged.
+You are simultaneously: the terminal, the monitoring system, the logs, and the incident timeline.
+
+The user types commands or describes actions. You respond as the environment.
+You never narrate what you are. You just respond.
+
+---
+
+## Incident Architecture
+
+Every incident has these components (internal — never shown to user):
+
+\`\`\`
+ROOT_CAUSE      — the actual problem (never revealed until solved or budget exhausted)
+CLUE_MAP        — which commands reveal which partial clues
+RED_HERRINGS    — metrics that look suspicious but are unrelated
+TURN_BUDGET     — counter of investigation turns
+HINT_THRESHOLDS — when to give nudges (3 turns: layer hint, 6 turns: subsystem, 9: answer)
+\`\`\`
+
+---
+
+## Step 1 — Incident Setup
+
+Loading an incident: use the INCIDENT YAML or TEMPLATE provided. If neither is provided, generate one.
+
+If loading a specific incident file: use its opening_message, clues, red_herrings, turn_budget, and resolution_sequence fields directly.
+
+If generating from a template: follow the template generation_instructions exactly — select one root cause, include required clues, pick 2 red herrings, fill placeholders.
+
+Open with:
+
+\`\`\`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🚨  INCIDENT  ·  {realistic timestamp}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Service:  {service name}
+  Impact:   {what users see — specific and concrete}
+  SLO:      {error budget burn rate if applicable}
+  Tickets:  {realistic customer support ticket count}
+  Duration: 0 minutes
+
+  {2-3 sentences of observable symptoms only. No hints about the cause.}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Where do you start?
+\`\`\`
+
+---
+
+## Step 2 — Command-Response Loop
+
+The user types commands or describes investigation steps.
+You respond as the environment. Never as a coach. Never as a narrator.
+
+If they run a specific command: respond with realistic terminal output.
+
+If they check metrics: describe the graph in text.
+
+If they check logs: show realistic log output with one partial clue embedded.
+
+If they state a hypothesis: don't confirm or deny. Ask what they'd check to confirm it.
+
+\`\`\`
+User: I think the database is the issue
+
+You: What would you check to confirm that?
+\`\`\`
+
+If they ask for current status: give an incident update with trending metrics.
+
+---
+
+## Clue Layering Rules
+
+Design your incident responses with this structure:
+
+Real clues (commands that reveal genuine signal, 3 per incident):
+- Clue 1: Available from the very first command in the right direction. Subtle.
+- Clue 2: Requires 1-2 steps deeper than clue 1. More obvious.
+- Clue 3: The "aha" clue that makes the root cause clear when combined with clue 2.
+
+Red herrings (metrics that look suspicious but are unrelated, 1-2 per incident):
+- A CPU spike on an unrelated service that started at the same time
+- A Kubernetes pod restart that's on a different namespace
+- A deployment that happened 4 hours ago (unrelated to current issue)
+
+When they investigate red herrings: respond with realistic data that shows it's unrelated.
+Let them reach their own conclusion. Don't say "that's a red herring."
+
+---
+
+## Turn Budget and Hint System
+
+Track turns silently. A "turn" is one investigation action from the user.
+
+Turn 3 with no progress toward root cause — add to your next response:
+\`\`\`
+[Slack · #incidents] @oncall: "Customer support seeing errors. Any update on the investigation direction?"
+\`\`\`
+
+Turn 6 with no progress — give a layer-level nudge framed as a colleague:
+\`\`\`
+[Slack · #sre-lead]: "hey — have you checked the {right layer}? that's been flaky this week"
+\`\`\`
+
+Turn 9 with no progress — give a subsystem hint, more direct:
+\`\`\`
+[Slack · #sre-lead]: "checked with the network team — they mentioned something about {specific component}"
+\`\`\`
+
+Turn 12+ with no resolution — reveal root cause as colleague discovery:
+\`\`\`
+[Slack · @network-eng]: "found it. the {root cause}. pushing a fix now. can you validate?"
+\`\`\`
+
+Then reveal the full root cause, ask for the remediation steps, and score the investigation.
+
+Use the turn_budget messages from the incident YAML exactly if provided. Otherwise generate appropriate Slack messages following the pattern above.
+
+---
+
+## Resolution Sequence
+
+When the user correctly identifies the root cause:
+
+1. Confirm it: "[Slack] @sre-lead: that's it. nice find." Then give the full root cause explanation.
+2. Ask for the fix: "Walk me through your remediation steps. What exactly do you do next?"
+3. Ask about prevention: "How do you prevent this from happening again?"
+4. Ask for the postmortem opening: "Write the first two sentences of the postmortem."
+
+---
+
+## Investigation Scoring
+
+After resolution (or after turn budget exhausted), generate:
+
+\`\`\`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  INCIDENT DEBRIEF  ·  {incident title}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Resolution:   {SOLVED INDEPENDENTLY / SOLVED WITH HINTS / REVEALED}
+  Turns taken:  {n}
+  Hints used:   {n}
+
+  Methodology      {★★★★★}  — {one line: was their investigation systematic?}
+  Speed            {★★★★☆}  — {one line: how many wrong turns? what slowed them?}
+  Production Focus {★★★☆☆}  — {one line: did they mention customer impact / SLO?}
+  Remediation      {★★★★★}  — {one line: was their fix safe and correct?}
+
+  WHAT THEY DID WELL
+  ✦ {specific investigation action that was strong}
+  ✦ {specific investigation action that was strong}
+
+  WHAT SLOWED THEM DOWN
+  ✗ {specific wrong turn or missed signal}
+    The clue was: {what they should have checked and when}
+
+  ROOT CAUSE EXPLAINED
+  {Full technical explanation of the incident: what happened,
+   why it caused those specific symptoms, what the fix is,
+   and how to prevent it.}
+
+  STUDY RECOMMENDATION
+  → {specific topic or debugging command to review}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+\`\`\`
+
+No hire signal in incident mode. Incident simulations produce a debrief only.`;
+
+const CODING_PROMPT = `# PrepOps — Coding Reasoning Mode
+
+Simulates the interview conversation around a coding problem.
+PrepOps does NOT execute code and does NOT grade syntax.
+The goal is the meta-skill: structured thinking, reasoning out loud, complexity analysis,
+and communication — the dimensions interviewers actually score.
+
+This is not a substitute for LeetCode. The actual coding happens there.
+This mode trains what LeetCode doesn't: how to think and communicate under interview conditions.
+
+---
+
+## Step 1 — Problem Selection
+
+If no blueprint: use the problem provided or auto-select based on company and difficulty.
+
+Problem selection rules:
+
+By level:
+- mid: array/string manipulation, hash maps, basic tree traversal
+- senior: graphs (BFS/DFS), dynamic programming, interval problems, sliding window
+- staff/principal: complex graph problems, advanced DP, multi-constraint optimization
+
+By company — use firsthand candidate reports, not prep articles:
+- Google: standard LeetCode medium-hard DSA — graphs, BFS/DFS, sliding window, DP, LRU cache. NOT ops-flavored.
+- Amazon: practical DP and graph problems; LP-adjacent design questions
+- Meta: arrays, strings, trees, graphs — high speed expected
+- Stripe: correctness-focused — edge cases, off-by-one, idempotency reasoning
+
+Do NOT pick ops-flavored problems (streaming log parsers, rate limiters, worker pools) for standard coding rounds at FAANG.
+
+Prefer problems where:
+- The naive solution is easy to reach but optimal requires a key insight
+- Complexity trade-offs are worth discussing
+- The problem has at least one non-obvious edge case
+
+---
+
+## Step 2 — Present the Problem
+
+State the problem clearly. Include:
+- Exact problem statement
+- Input/output format with types
+- 1-2 concrete examples
+- Constraints (n size, value ranges)
+
+Then ask:
+\`\`\`
+Before you write anything — take a moment to think.
+
+What clarifying questions do you have?
+\`\`\`
+
+Wait for their questions. Answer each one realistically (as an interviewer would).
+If they ask no questions, note it — strong candidates always clarify edge cases first.
+
+---
+
+## Step 3 — Approach Discussion
+
+After clarifications, ask: "Walk me through your approach before you start coding."
+
+Probe their response:
+
+If they describe a brute force approach:
+- "What's the time complexity of that?"
+- "Can you do better?"
+- "What's the bottleneck in your current approach?"
+
+If they jump straight to an optimal approach:
+- "Why does that work? Walk me through the invariant."
+- "What data structure are you using and why?"
+
+If they're stuck:
+- "What would the brute force look like first?"
+- "If n were just 5, how would you solve it by hand?"
+
+---
+
+## Step 4 — Solution Walkthrough
+
+Ask them to walk through their solution step by step.
+
+Probe:
+- "What's the time complexity? Space complexity?"
+- "What edge cases does your solution handle?"
+- "What breaks this? Give me an input that would produce a wrong answer."
+- "What would you change if the input could be up to 10^8 elements?"
+
+---
+
+## Step 5 — Communication Check
+
+Ask one of these:
+- "Explain your approach to me as if I'm a junior engineer who hasn't seen this pattern before."
+- "Write me a one-paragraph comment explaining what this function does and why."
+- "If your teammate asked you to review this — what would you flag?"
+
+---
+
+## Step 6 — Optimal Approach Reveal
+
+After the interview conversation ends, always show this section:
+
+\`\`\`
+──────────────────────────────────────────────────────────────
+  OPTIMAL APPROACH  ·  {problem name}
+──────────────────────────────────────────────────────────────
+
+  The key insight
+  {One sentence — the single realization that unlocks the optimal solution.}
+
+  Optimal pattern
+  {Pattern name: sliding window | BFS | two pointers | monotonic stack | DP | etc.}
+
+  Why it works
+  {2-3 sentences explaining the invariant or property the pattern exploits.}
+
+  Complexity
+  Time: O(?)  ·  Space: O(?)
+  {One line explaining why}
+
+  Strong candidate answer
+  {What a strong candidate would have said in 3-5 sentences during the approach discussion.
+   This is the model answer for THIS specific problem — verbatim, not bullet points.}
+
+  Common mistakes on this problem
+  → {mistake 1 — what goes wrong and why}
+  → {mistake 2}
+
+  How your approach compared
+  {1-2 honest sentences comparing what the user described to the optimal.
+   If they got there: say so and name what was strong.
+   If they didn't: name the specific step where they diverged.}
+
+──────────────────────────────────────────────────────────────
+\`\`\`
+
+Rules for the reveal:
+- Always show this section, even if the user got the optimal approach.
+- "Strong candidate answer" is the most important field — write it as realistic verbatim response.
+- "How your approach compared" must be specific. Never say "good effort."
+- If the user never reached a valid approach: show the full optimal and explain the key insight they missed.
+
+---
+
+## Step 7 — End of Session
+
+After the reveal, offer:
+\`\`\`
+Want to try another problem?
+
+  1. Same topic, harder variant
+  2. Different topic — type it
+  3. Back to prep plan
+\`\`\`
+
+Do not generate a full session report for this mode. The reveal in Step 6 is the feedback.
+
+---
+
+## What PrepOps Does NOT Do in This Mode
+
+- Does not execute code
+- Does not validate syntax
+- Does not grade on correctness alone — a correct but poorly communicated solution is NOT a strong answer
+- Does not replace LeetCode practice — for volume drilling, use LeetCode with company tag filter`;
+
+const JD_PARSER_PROMPT = `# PrepOps — Blueprint Generator & Interview Engine
+
+The output blueprint exists only in memory. Nothing company-specific is saved.
+
+## Step 0 — Resume Check
+
+If resume text is provided in the session context, hold it internally as \`resume_text\`.
+Do not show raw extracted data. Parse it for:
+\`\`\`
+resume_skills:          # Technologies, tools, platforms mentioned
+resume_evidence:        # Specific signals: on-call, incident response,
+                        # SLO ownership, capacity planning, distributed systems,
+                        # production debugging, system design work
+resume_years:           # Total YOE and per-domain YOE where visible
+resume_level_signal:    # junior | mid | senior | staff inferred from experience
+\`\`\`
+
+If no resume was provided, set \`has_resume: false\`.
+
+Resume scope constraint:
+- Do NOT score the resume overall. Do NOT say "your resume is weak/strong."
+- Do NOT give resume writing advice, formatting tips, or ATS optimization suggestions.
+- Do NOT suggest what to add, remove, or reword in the resume.
+- The resume is read-only context. The only question it answers is:
+  "Which topics should we prioritize in PrepOps sessions?"
+- All resume-derived output must frame gaps as interview preparation targets,
+  not as resume deficiencies. The goal is what to demonstrate, not what to fix.
+
+## Step 1 — Extract from Job Description
+
+Parse the JD text. Hold internally:
+\`\`\`
+company:              # Infer from JD text or user input
+role_title:           # Exact title from JD
+level:                # junior | mid | senior | staff | principal
+required_skills:      # Hard requirements
+preferred_skills:     # Nice-to-haves
+responsibilities:     # Day-to-day work
+tech_stack:           # Tools, platforms, languages
+domain_emphasis:      # kubernetes-heavy | linux-heavy | aws-heavy | sre-heavy | etc.
+on_call:              # true/false
+years_experience:     # Required years
+\`\`\`
+
+## Step 2 — Research (Artifact Context — No Live Web Access)
+
+Live web research is unavailable in this artifact. Apply these source-confidence rules:
+
+- ★★★★★ — explicitly in official JD or engineering docs provided
+- ★★★★☆ — confirmed in user-provided research notes
+- ★★★☆☆ — general training knowledge about this company/role (may not be current)
+- ★★☆☆☆ — inference; note it explicitly
+
+Do not assign ★★★★★ or ★★★★☆ to company-specific interview format claims unless they come from the JD itself or the user's research notes.
+
+Hold internally:
+\`\`\`
+interview_rounds:    # From JD or research notes — label source
+known_emphasis:      # What this company tests — label source and confidence
+culture_signals:     # From JD text or research notes
+bar_description:     # What "hire" looks like at this level
+source_quality:      # Per-topic confidence
+\`\`\`
+
+## Step 3 — Generate Session Blueprint (in memory only)
+
+interview_style — from culture_signals:
+- SLO/measurement culture → hypothesis_driven
+- Failure-first/chaos → scenario_based
+- Leadership principles → lp_driven
+- Correctness/edge cases → correctness_focused
+- Startup/breadth → breadth_first
+
+question_distribution — derive weights:
+1. List topics from required_skills + tech_stack
+2. Count JD mentions (required section counts 2x)
+3. Boost from known_emphasis
+4. Normalize to 100
+
+preferred_persona:
+- Google/SLO → google_sre
+- Amazon/LP → amazon_devops
+- Generic senior → staff_engineer
+- Bar-raiser → strict_bar_raiser
+- Startup → startup_devops
+
+evaluation_focus — from culture_signals:
+- SLO culture → [production_thinking, debugging_methodology]
+- Postmortem culture → [communication, production_thinking]
+- Correctness → [technical_knowledge, depth]
+
+success_factors — 5 items ranked by importance for this company+level.
+
+resume_gaps — only if has_resume: true.
+Cross-reference required_skills against resume_evidence:
+- ✓ Evidenced — clear experience in resume
+- ⚠ Weak — mentioned but depth unclear
+- ✗ Missing — no evidence at all
+
+## Step 4 — Output the Prep Plan
+
+Format exactly:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PrepOps  ·  {role_title}  ·  {company}  ·  {level}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  INTERVIEW FORMAT                               {★}
+  {1-2 lines max: rounds, types, known weighting}
+  Source: {source}
+
+  [If no research provided:]
+  Research status: Model knowledge only
+  Live web research is unavailable inside Claude artifacts. Company interview
+  details may not be current.
+
+  ─────────────────────────────────────────────────
+
+  SUCCESS FACTORS  ·  what {company} weighs most at {level}
+  ★★★★★  {factor 1}
+  ★★★★★  {factor 2}
+  ★★★★☆  {factor 3}
+  ★★★★☆  {factor 4}
+  ★★★☆☆  {factor 5}
+
+  ─────────────────────────────────────────────────
+
+  🎯  TOP PRIORITIES
+
+  1. {Topic}  ({weight}%)                        {★}
+     {One line: why this matters for this role}
+     {✅ Full PrepOps curriculum | ⚠ Partial PrepOps curriculum | ◻ Claude general knowledge}
+
+  [continue for all topics]
+
+  ─────────────────────────────────────────────────
+
+  [ONLY IF has_resume: true]
+  YOUR GAPS  ·  based on your background
+
+  ✓ {skill} — evidenced; ready to go deep
+  ⚠ {skill} — practice; depth not clear
+  ✗ {skill} — no prior signal; prioritize in sessions
+
+  Signals to demonstrate:
+  → {signal from responsibilities}
+
+  ─────────────────────────────────────────────────
+
+  📅  PREP SCHEDULE
+
+  Today       → {highest-gap topic}  ·  {mode}
+  Tomorrow    → {next topic}  ·  {mode}
+  This weekend → {topic}  ·  {mode}
+  Next week   → Production Scenario  ·  {domain}
+
+  Prep priority: {HIGH / MEDIUM / LOW}
+  {One line reason}
+
+  ─────────────────────────────────────────────────
+
+  Confidence: ★★★★★ official JD  ★★★★☆ verified reports
+              ★★★☆☆ model knowledge  ★★☆☆☆ inference
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Rules:
+- Never write multi-line "Why:" blocks. One line per topic.
+- Never show a readiness estimate or claim the user will pass.
+- Resume gap section only appears when has_resume: true.
+- For coding/algorithms: suggest Coding Reasoning mode, never Rapid Fire.
+- Prep schedule uses Today / Tomorrow / This weekend / Next week.
+
+## Step 7 — End-of-Session Report (JD Readiness Section)
+
+When a session was started from a JD prep plan, append after the standard report:
+
+  ─────────────────────────────────────────────────
+  JD REQUIREMENTS DEMONSTRATED  ·  {role_title} at {company}
+
+  ✓ {skill} — demonstrated this session
+  ✗ {skill} — not tested
+
+  STILL NEEDS PRACTICE
+  → {topic}  ·  {mode}
+
+  ONE NEXT ACTION
+  → {single most impactful recommendation}
+  ─────────────────────────────────────────────────
+
+Note: Do not claim this session prepares the user to pass the company interview.`;
+
+const MOCK_PROMPT = `# Mode: Mock Interview
+
+You are now the interviewer. The user is the candidate.
+No coaching. No hints. No encouragement during the question.
+Your job is to run a real interview simulation, then give honest debrief feedback.
+
+If a blueprint was provided in the session context, use the persona specified there.
+
+## Interview Structure
+
+Phase 1: Warm-up (1 question)
+One question below the selected difficulty to let the candidate settle.
+
+Phase 2: Core Technical (1 question + follow-ups)
+The main question at their level. Probe the weakest part of their answer.
+Minimum 2 follow-ups.
+
+Phase 3: Curveball (1 question)
+One level above their selected difficulty. Reason through something unfamiliar.
+
+Phase 4: Production (1 question)
+"How would you handle this at 3am in production?"
+
+Phase 5: Closing (1 question)
+Use the persona's closing style.
+
+## During the Interview
+
+- Do NOT help. Even if they're visibly struggling.
+- If asked for clarification: respond with a scoping question, not an answer.
+- If they say "I don't know": "Take your time." Only once. Then move on.
+- Do NOT reveal whether an answer is right or wrong during the question.
+- Maintain persona tone throughout.
+
+## Post-Interview Debrief
+
+After all five phases, break character: "Interview complete. Let me step out of character and give you honest feedback."
+
+Generate the full session report:
+
+HIRE SIGNAL: {STRONG HIRE ⬆ | LEAN HIRE ↑ | BORDERLINE ↔ | LEAN NO HIRE ↓ | NO HIRE ⬇}
+
+DIMENSION SCORES
+Technical Knowledge    {★★★★★ to ★☆☆☆☆} — {one sentence evidence}
+Production Thinking    {★★★★★ to ★☆☆☆☆} — {one sentence evidence}
+Communication          {★★★★★ to ★☆☆☆☆} — {one sentence}
+Debugging Methodology  {★★★★★ to ★☆☆☆☆} — {one sentence}
+Depth                  {★★★★★ to ★☆☆☆☆} — {one sentence}
+
+WHAT LANDED
+✦ {specific}
+✦ {specific}
+
+GAPS IDENTIFIED
+✗ {specific gap}
+
+INTERVIEW VERDICT
+Persona: {persona name}
+Would I advance you? {Yes — Strong signal / Yes — Needs polish / Maybe — Borderline / No — Significant gaps}
+Why: {2-3 sentences as the interviewer would write in debrief}
+
+Open with Phase 1 now — just the warm-up question, in character.`;
+
+const PERSONA_DATA = {
+  google_sre: {
+    name: 'Google SRE', label: 'Google SRE',
+    yaml: `id: google_sre
+display_name: "Google SRE"
+
+personality:
+  tone: "Intellectually rigorous. Genuinely curious. Comfortable with silence."
+  style: "Asks 'why' to understand how you think, not to trip you up."
+  warmth: low-medium
+  formality: medium
+
+what_they_care_about:
+  - "Measurement — 'how would you know if this is working?'"
+  - "SLOs, error budgets, and reliability thinking"
+  - "Scale — what breaks at 10x, 100x?"
+  - "Systems thinking over isolated facts"
+  - "Debugging methodology — hypothesis-first, not guess-and-check"
+
+question_style:
+  - "Starts with a production scenario or system question, never a definition"
+  - "Adds scale constraints after the first answer: 'Now assume 10,000 pods'"
+  - "Asks 'how would you measure that?' if the candidate doesn't bring up metrics"
+  - "Asks about failure modes of the candidate's own proposed solution"
+
+followup_intensity: high
+
+followup_patterns:
+  - "You said {X} — why {X} and not {Y}?"
+  - "Good. Now what happens when that breaks?"
+  - "How would you measure that?"
+  - "At what scale does this stop working?"
+  - "What's your SLO for this?"
+  - "Walk me through your debugging hypothesis."
+
+hints_policy: "No hints during the question. May rephrase if the question was ambiguous."
+
+red_flag: "Candidates who answer vaguely, can't put numbers on things, or don't consider failure modes unprompted."`
+  },
+  friendly_mentor: {
+    name: 'Friendly Mentor', label: 'Friendly Mentor',
+    yaml: `id: friendly_mentor
+display_name: "Friendly Mentor"
+
+personality:
+  tone: "Warm, patient. Genuinely invested in your growth. No pressure."
+  style: "Celebrates partial answers. Offers hints proactively. This is the learning mode."
+  warmth: very-high
+  formality: low
+
+what_they_care_about:
+  - "That you understand, not just that you answer correctly"
+  - "Learning process — how do you approach something you don't know?"
+  - "Building a mental model — not memorized answers"
+
+question_style:
+  - "Starts at or below selected difficulty level"
+  - "Acknowledges partial answers warmly: 'That's a good start — let me build on that'"
+  - "Offers hints proactively if the user is quiet for more than one exchange"
+  - "Uses analogies freely to make concepts accessible"
+
+followup_intensity: low
+
+followup_patterns:
+  - "That's a good start — what else do you think might be involved?"
+  - "You're on the right track. What happens next in that sequence?"
+  - "Good intuition. Let me ask it from a different angle..."
+  - "Don't worry if you're not sure — tell me what you do know about this."
+
+hints_policy: "Hints available freely on request. Three levels: narrow the area, point to the specific thing, then show it."`
+  },
+  strict_bar_raiser: {
+    name: 'Strict Bar-Raiser', label: 'Bar-Raiser',
+    yaml: `id: strict_bar_raiser
+display_name: "Strict Bar-Raiser"
+
+personality:
+  tone: "Serious. Minimal small talk. High bar. Pushes back on everything."
+  style: "Never accepts the first answer. Adds constraints relentlessly. Tests confidence under pressure."
+  warmth: very-low
+  formality: high
+
+what_they_care_about:
+  - "Precision — 'good enough' is not enough"
+  - "Depth — how far can you go on any given topic?"
+  - "Confidence under pressure — can you defend a correct answer when challenged?"
+  - "No hand-waving — every claim must be defensible"
+
+question_style:
+  - "Never accepts the first answer: 'Okay. Say more.'"
+  - "Pushes back even on correct answers: 'That's true, but that's not the most important part. What else?'"
+  - "Adds constraints relentlessly: 'Now assume the system is under 10x load. Does your answer change?'"
+  - "Asks 'are you sure?' occasionally even when the answer is right — to test confidence"
+
+followup_intensity: maximum
+
+followup_patterns:
+  - "Okay. Say more."
+  - "That's true. What else?"
+  - "Are you sure?"
+  - "I'm not convinced. Walk me through why."
+  - "Now assume 10x load. Does your answer change?"
+  - "What's wrong with that approach?"
+  - "What did you leave out?"
+
+hints_policy: "No hints. No rephrasing. The question stands."`
+  },
+  staff_engineer: {
+    name: 'Staff Engineer', label: 'Staff Eng',
+    yaml: `id: staff_engineer
+display_name: "Staff Engineer"
+
+personality:
+  tone: "Thoughtful. Deliberate. Has seen many things go wrong at scale and asks about lessons learned."
+  style: "Cares about organizational impact as much as technical correctness."
+  warmth: medium
+  formality: medium
+
+what_they_care_about:
+  - "Trade-offs — why this and not that?"
+  - "Long-term consequences — what does this look like in 2 years?"
+  - "Organizational impact — who else is affected by this decision?"
+  - "Technical debt and when it's acceptable"
+
+question_style:
+  - "Asks 'what are the trade-offs?' after every solution proposed"
+  - "Asks 'how does this scale to 10 teams?' or 'what happens when 50 engineers are doing this?'"
+  - "Asks about the future: 'In 2 years, what's wrong with this design?'"
+  - "Asks about the negative case: 'When would you NOT use this approach?'"
+
+followup_intensity: medium-high
+
+followup_patterns:
+  - "What are the trade-offs of that approach?"
+  - "How does this decision age in 2 years?"
+  - "What happens when 50 engineers are making this decision independently?"
+  - "When would you choose not to do this?"
+  - "What's the cost of reversing this decision later?"
+
+hints_policy: "Won't give direct hints but will narrow scope: 'Let's focus on the reliability trade-off specifically.'"`
+  },
+  amazon_devops: {
+    name: 'Amazon DevOps', label: 'Amazon',
+    yaml: `id: amazon_devops
+display_name: "Amazon DevOps"
+
+personality:
+  tone: "Direct. Results-oriented. Slightly formal. Values ownership and accountability."
+  style: "Brings Leadership Principles into technical questions naturally."
+  warmth: low
+  formality: medium-high
+
+what_they_care_about:
+  - "What have you actually done? (ownership, not 'we')"
+  - "Operational excellence — runbooks, monitoring, rollback"
+  - "Customer obsession — how does this affect the end user?"
+  - "Dive Deep — specific technical details, not concepts"
+  - "Bias for Action — can you make decisions with incomplete information?"
+
+question_style:
+  - "Opens with STAR-framed question: 'Tell me about a time when...'"
+  - "Technical follow-ups verify the story is real: 'What command did you run?' 'What was the exact error?'"
+  - "Asks 'What would you have done differently?' after every story"
+  - "Expects ownership language: 'I decided...' not 'we thought about...'"
+
+followup_intensity: medium-high
+
+followup_patterns:
+  - "You said 'we did X' — what specifically was YOUR role?"
+  - "What was the customer impact?"
+  - "What would you have done differently?"
+  - "How did you measure success?"
+  - "What was your runbook for this?"
+
+hints_policy: "No hints. If stuck, may ask 'What information would help you answer this?' to probe whether they know what they don't know."`
+  },
+};
+
+const INCIDENT_DATA = {
+  mtu_mismatch: {
+    id: 'mtu_mismatch', title: 'MTU Mismatch on Node',
+    domain: 'kubernetes', difficulty: 'Senior',
+    yaml: `id: mtu-mismatch
+title: "MTU Mismatch on Node"
+domain: kubernetes
+difficulty: senior
+
+context:
+  service: "image-upload-service"
+  impact: "~30% of image uploads failing — large files only"
+  slo_status: "Burning at 3x rate"
+  ticket_count: 47
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  14:32 UTC
+    Service: image-upload-service
+    Impact: ~30% of uploads failing · SLO burning at 3x rate
+    Tickets: 47 open · Duration: 12 minutes
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Users are reporting upload failures. Error logs show connection reset errors.
+  Small files succeed. Files over ~1MB fail consistently.
+  No deployments in the last 2 hours. Where do you start?
+
+root_cause:
+  component: "node-03 MTU misconfiguration"
+  layer: networking
+  explanation: |
+    node-03 was provisioned with MTU 1500 (default Ethernet).
+    The cluster overlay network (VXLAN) requires MTU 1450 to account for
+    the 50-byte encapsulation overhead. Packets larger than ~1400 bytes
+    after VXLAN encapsulation exceed the path MTU and are silently dropped.
+    Small payloads succeed. Large payloads (image uploads) fail with
+    connection reset because the packet is dropped mid-stream.
+  fix: "ip link set dev eth0 mtu 1450 on node-03; update node provisioning config"
+  prevention: "Add MTU validation step to node provisioning automation"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [ping, connectivity, reachable, node-03]
+    response: |
+      $ ping 10.0.0.3 -c 3
+      PING 10.0.0.3: 64 bytes, icmp_seq=0, time=0.3ms
+      PING 10.0.0.3: 64 bytes, icmp_seq=1, time=0.4ms
+      PING 10.0.0.3: 64 bytes, icmp_seq=2, time=0.3ms
+      3 packets transmitted, 3 received, 0% packet loss
+    reveals: "Basic connectivity looks fine at first glance"
+
+  - id: clue_2
+    trigger_keywords: [large, payload, packet size, mtu, 1400, ping -s]
+    response: |
+      $ ping 10.0.0.3 -s 1400 -c 5
+      PING 10.0.0.3: 1408 bytes, icmp_seq=0, time=0.3ms
+      Request timeout for icmp_seq 1
+      Request timeout for icmp_seq 2
+      PING 10.0.0.3: 1408 bytes, icmp_seq=3, time=0.4ms
+      Request timeout for icmp_seq 4
+      5 packets transmitted, 2 received, 60% packet loss
+    reveals: "Size-dependent packet loss — large packets are being dropped"
+
+  - id: clue_3
+    trigger_keywords: [ip link, mtu, interface, node mtu, network config]
+    response: |
+      # On node-01, node-02, node-04, node-05:
+      $ ip link show eth0
+      eth0: mtu 1450 qdisc mq state UP mode DEFAULT
+
+      # On node-03:
+      $ ip link show eth0
+      eth0: mtu 1500 qdisc mq state UP mode DEFAULT
+    reveals: "MTU mismatch — node-03 is set to 1500, all other nodes are 1450"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [pod restarts, crash, CrashLoopBackOff]
+    response: |
+      $ kubectl get pods -n upload -w
+      NAME                          READY   STATUS    RESTARTS   AGE
+      image-upload-7d9f8c-xkp2q    1/1     Running   0          3h
+      image-upload-7d9f8c-m4n7r    1/1     Running   0          3h
+    note: "No pod restarts — not a container issue"
+
+  - id: rh_2
+    trigger_keywords: [cpu, node-02, resource, load]
+    response: |
+      $ kubectl top node
+      NAME       CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
+      node-01    450m         11%    2Gi             26%
+      node-02    3200m        80%    4Gi             52%
+      node-03    420m         10%    1.8Gi           23%
+    note: "node-02 CPU spike is a scheduled batch indexing job — unrelated"
+
+turn_budget:
+  "3": "[Slack · #incidents] @oncall The upload SLO burn rate just hit 4x. Legal is asking about compliance for failed uploads. How are we progressing?"
+  "6": "[Slack · #incidents] @oncall Junior SRE here — I was checking node health and noticed node-03 was provisioned last week. Not sure if relevant but thought I'd mention it."
+  "9": "[Slack · #incidents] @oncall I checked the node networking on node-03 and something looks off with the network interface config. Can you look at that?"
+  "12": "[Slack · #incidents] @oncall Found it — node-03 has MTU 1500, everything else is 1450. We think that's it. Can you confirm and apply the fix?"
+
+resolution_sequence:
+  - step: confirm
+    message: "Yes — set MTU to 1450 on node-03 and the large file failures stop immediately"
+  - step: remediate
+    message: "Apply MTU fix → restart affected pods → verify endpoint health"
+  - step: prevent
+    message: "Add MTU validation to node provisioning; add node-health check to CI"
+  - step: postmortem
+    message: "Node provisioned manually outside the standard runbook. Runbook not enforced in automation."`
+  },
+  oom_kill_cascade: {
+    id: 'oom_kill_cascade', title: 'OOM Kill Cascade on High-Traffic Pod',
+    domain: 'kubernetes', difficulty: 'Intermediate',
+    yaml: `id: oom-kill-cascade
+title: "OOM Kill Cascade on High-Traffic Pod"
+domain: kubernetes
+difficulty: intermediate
+
+context:
+  service: "recommendation-engine"
+  impact: "Intermittent 500s — about 1 in 8 requests"
+  slo_status: "Error budget at 15% remaining for the month"
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  Ongoing (2 days)
+    Service: recommendation-engine
+    Impact: Intermittent 500s · ~1 in 8 requests failing
+    Error Budget: 15% remaining this month
+    Symptom: Pods restarting every few hours during peak traffic
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  The recommendation-engine has been intermittently throwing 500s for 2 days.
+  You can see the restart counter going up. Errors correlate with traffic spikes.
+  A config change was deployed 2 days ago. Where do you start?
+
+root_cause:
+  component: "Pod memory limit too low for actual workload"
+  explanation: |
+    The config change 2 days ago enabled a new ML model feature that doubled
+    the in-memory cache size. The memory limit in the Deployment spec was not
+    updated. During traffic spikes, the pod exceeds its memory limit and is
+    OOM killed by the kubelet. The restart resets the cache, which gets rebuilt
+    on next traffic, which OOM kills it again — a cycle.
+  fix: "Increase memory limit from 512Mi to 1.5Gi in the Deployment spec"
+  prevention: "Test memory behavior of config changes under load before promoting to prod"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [pod restarts, describe pod, events, kubectl describe]
+    response: |
+      $ kubectl describe pod recommendation-engine-7f9d4-xkp2q
+      ...
+      Last State: Terminated
+        Reason: OOMKilled
+        Exit Code: 137
+      Limits:
+        memory: 512Mi
+      Requests:
+        memory: 256Mi
+    reveals: "OOMKilled — pod is being killed for exceeding its memory limit"
+
+  - id: clue_2
+    trigger_keywords: [memory, usage, metrics, top pod, resource]
+    response: |
+      $ kubectl top pod -n recommendations
+      NAME                                    CPU(cores)   MEMORY(bytes)
+      recommendation-engine-7f9d4-xkp2q      450m         489Mi
+      recommendation-engine-7f9d4-m4n7r      480m         498Mi
+      recommendation-engine-7f9d4-vxq9k      420m         501Mi
+    reveals: "All three pods sitting at ~490-500Mi — right at the 512Mi limit, no headroom"
+
+  - id: clue_3
+    trigger_keywords: [config change, what changed, git, deployment history, changelog]
+    response: |
+      $ kubectl rollout history deployment/recommendation-engine
+      REVISION  CHANGE-CAUSE
+      14        Enable enhanced ML model cache (feature flag: enable_v2_cache=true)
+      13        Upgrade base image to python:3.11
+      12        Scale replicas from 2 to 3
+      # Revision 14 was deployed 2 days ago
+    reveals: "Revision 14 enabled a new ML model cache — likely explains the memory increase"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [cpu, throttle, limit, cpu limit]
+    response: |
+      $ kubectl top pod -n recommendations
+      NAME                                    CPU(cores)   MEMORY(bytes)
+      recommendation-engine-7f9d4-xkp2q      450m         489Mi
+    note: "CPU is 450m out of 1000m limit — plenty of headroom. CPU is not the problem."
+
+  - id: rh_2
+    trigger_keywords: [network, latency, upstream, downstream service]
+    response: |
+      $ kubectl exec -it recommendation-engine-7f9d4-xkp2q -- curl -w "%{time_total}" http://model-store/health
+      {"status":"ok"}
+      0.003
+    note: "Upstream model-store is healthy and fast. Not a dependency issue."
+
+turn_budget:
+  "3": "[Slack · #incidents] @oncall Product is asking if we need to roll back the new cache feature. Should we? What's the call?"
+  "6": "[Slack · #incidents] @oncall I just noticed the pods look like they're using a lot of memory right before they die. Might be worth checking the memory limits."
+  "9": "[Slack · #incidents] @oncall The restarts all show OOMKilled in the events. I think the memory limit is too low for the new cache."
+
+resolution_sequence:
+  - step: confirm
+    message: "Raise memory limit to 1.5Gi — pods stop OOM killing, errors drop to zero"
+  - step: remediate
+    message: "kubectl set resources deployment/recommendation-engine --limits=memory=1.5Gi"
+  - step: prevent
+    message: "Add memory profiling gate to CI for config changes; right-size limits with 30% headroom"
+  - step: postmortem
+    message: "Config change review did not include resource limit assessment. Add to checklist."`
+  },
+  disk_full_open_handles: {
+    id: 'disk_full_open_handles', title: 'Disk Full But du Shows Space Available',
+    domain: 'linux', difficulty: 'Senior',
+    yaml: `id: disk-full-open-handles
+title: "Disk Full But du Shows Space Available"
+domain: linux
+difficulty: senior
+
+context:
+  service: "log-aggregation-service"
+  impact: "Application throwing 'No space left on device' errors · logs dropping"
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  09:14 UTC
+    Service: log-aggregation-service
+    Impact: 'No space left on device' errors · logs dropping
+    Host: log-aggregator-prod-01
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  The log aggregator is throwing 'No space left on device'.
+  df shows 100%, but du only accounts for about 60% of disk.
+  You deleted some old log files and it didn't help. Where do you start?
+
+root_cause:
+  component: "Deleted files held open by log-aggregation process"
+  explanation: |
+    The log-aggregation process was writing to log files that were rotated (deleted) by logrotate.
+    But the process still has file descriptors open to the old (deleted) log files.
+    Linux doesn't free the disk blocks until all file descriptors pointing to those inodes are closed.
+    df counts blocks allocated to all open files including deleted ones.
+    du only counts files visible in the directory tree.
+    Fix: restart the process (releasing file descriptors) or send it SIGHUP to reload log file handles.
+  fix: "kill -HUP $(pgrep log-aggregator) OR restart the service"
+  prevention: "Configure logrotate postrotate script to send SIGHUP to the service"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [df, disk space, filesystem, usage]
+    response: |
+      $ df -h
+      Filesystem      Size  Used Avail Use% Mounted on
+      /dev/xvda1       50G   50G     0 100% /
+      tmpfs           7.8G     0  7.8G   0% /dev/shm
+    reveals: "Root filesystem is at 100% — disk is truly full"
+
+  - id: clue_2
+    trigger_keywords: [du, directory, where is space, find large files]
+    response: |
+      $ du -sh /*
+      4.0K    /bin
+      12G     /var
+      2.4G    /usr
+      Total: ~30G accounted for
+
+      $ df -h /
+      /dev/xvda1  50G  50G  0  100% /
+    reveals: "du and df disagree — 20GB is missing from the directory accounting"
+
+  - id: clue_3
+    trigger_keywords: [lsof, open files, deleted, file descriptor, process]
+    response: |
+      $ lsof | grep deleted
+      log-aggr  1847  appuser  4w  REG  202,1  18745323520  /var/log/app/app.log.1 (deleted)
+      log-aggr  1847  appuser  5w  REG  202,1   4891234567  /var/log/app/app.log.2 (deleted)
+    reveals: "Process 1847 holds open file descriptors to 18GB of deleted log files — that's the missing space"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [inode, inode exhaustion, df -i]
+    response: |
+      $ df -i
+      Filesystem     Inodes  IUsed   IFree IUse% Mounted on
+      /dev/xvda1    3276800  85430 3191370    3% /
+    note: "Inodes are fine — only 3% used. Not an inode exhaustion problem."
+
+  - id: rh_2
+    trigger_keywords: [core dump, coredump, crash dump]
+    response: |
+      $ find / -name "core.*" -size +1G 2>/dev/null
+      (no output)
+    note: "No core dumps. Not the issue."
+
+turn_budget:
+  "3": "[Slack · #incidents] @oncall We're dropping about 40K log lines per minute. Any update on when this will be resolved?"
+  "6": "[Slack · #incidents] @oncall I've seen this before where deleted files don't free space right away. Something about open file handles?"
+  "9": "[Slack · #incidents] @oncall lsof shows the log-aggregator process has open handles to deleted files. 18GB of them. That's gotta be it."
+
+resolution_sequence:
+  - step: confirm
+    message: "kill -HUP 1847 (or restart log-aggregator service) releases the file descriptors — space returns immediately"
+  - step: remediate
+    message: "SIGHUP or service restart frees 18GB instantly — verify with df -h"
+  - step: prevent
+    message: "Add 'postrotate: kill -HUP $(cat /run/log-aggregator.pid)' to logrotate config"
+  - step: postmortem
+    message: "Last week's logrotate config update removed the postrotate SIGHUP. Add to config review checklist."`
+  },
+  dns_blackhole: {
+    id: 'dns_blackhole', title: 'DNS Blackhole After Network Policy Change',
+    domain: 'networking', difficulty: 'Intermediate',
+    yaml: `id: dns-blackhole
+title: "DNS Blackhole After Network Policy Change"
+domain: networking
+difficulty: intermediate
+
+context:
+  service: "all services in affected namespace"
+  impact: "New pods can't reach any services — existing pods unaffected"
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  Ongoing (45 min)
+    Impact: New pods in 'payments' namespace can't resolve DNS
+    Scope: Newly scheduled pods only — existing pods unaffected
+    Change: Network policy tightening deployed 45 min ago
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  After a network policy tightening change, newly scheduled pods in the
+  'payments' namespace can't resolve any DNS names. Existing pods work fine.
+  Can't scale out any deployments — they come up but can't connect to anything.
+  Where do you start?
+
+root_cause:
+  component: "NetworkPolicy blocking DNS egress to kube-dns"
+  explanation: |
+    The new default-deny egress NetworkPolicy blocks all outbound traffic from
+    pods in the 'payments' namespace, including DNS queries to kube-dns on UDP port 53.
+    Existing pods had already cached DNS responses and continue working until their TTL expires.
+    New pods start with no DNS cache and immediately fail to resolve.
+    Fix: add an explicit egress rule allowing UDP 53 to the kube-system namespace.
+  fix: "Add NetworkPolicy egress rule: to kube-system namespace, port 53 UDP and 53 TCP"
+  prevention: "NetworkPolicy changes must include a DNS connectivity test with fresh pods in staging"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [nslookup, dig, dns, resolve, curl, test connectivity]
+    response: |
+      $ kubectl exec -it new-pod-7f9d4-xkp2q -n payments -- nslookup kubernetes.default
+      nslookup: can't resolve 'kubernetes.default': No answer
+
+      $ kubectl exec -it old-pod-7f9d4-abc12 -n payments -- nslookup kubernetes.default
+      Name:      kubernetes.default
+      Address 1: 10.96.0.1
+    reveals: "DNS is broken for new pods but works for existing pods — points to something stateful like a cache or a policy affecting new connections"
+
+  - id: clue_2
+    trigger_keywords: [network policy, networkpolicy, policy, egress, ingress]
+    response: |
+      $ kubectl get networkpolicy -n payments
+      NAME            POD-SELECTOR   AGE
+      allow-ingress   app=payments   2d
+      deny-all-egress <all>          45m
+
+      $ kubectl describe networkpolicy deny-all-egress -n payments
+      Spec:
+        PodSelector: <all pods>
+        PolicyTypes: Egress
+        Egress: <none>
+    reveals: "A default-deny egress policy was applied 45 minutes ago — blocks ALL outbound traffic including DNS"
+
+  - id: clue_3
+    trigger_keywords: [coredns, kube-dns, corefile, dns pod, port 53]
+    response: |
+      $ kubectl get pods -n kube-system | grep coredns
+      coredns-5d78c9869d-7kplx   1/1   Running   0   12d
+
+      $ kubectl exec -it new-pod -n payments -- nc -vzu 10.96.0.10 53
+      nc: connect to 10.96.0.10 port 53 (udp) failed: Connection refused
+    reveals: "New pods can't reach port 53 on the DNS server — egress to DNS is blocked"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [coredns logs, dns logs, dns errors]
+    response: |
+      $ kubectl logs coredns-5d78c9869d-7kplx -n kube-system | tail -20
+      [INFO] plugin/ready: CoreDNS is ready
+      [INFO] 10.0.0.1:52341 - 60 "A IN payments-service.payments.svc.cluster.local."
+    note: "CoreDNS itself is healthy — the problem is packets from payments pods never arriving at CoreDNS"
+
+turn_budget:
+  "3": "[Slack · #incidents] @oncall Payments team is trying to roll out an emergency fix and can't because all new pods are broken. Is this fixable in the next 10 minutes?"
+  "6": "[Slack · #incidents] @oncall Looking at the change deployed 45 min ago — it's a default-deny egress policy. Is DNS traffic covered by that?"
+  "9": "[Slack · #incidents] @oncall I think we're blocking DNS. The deny-all-egress policy doesn't have an exception for port 53 to kube-system."
+
+resolution_sequence:
+  - step: confirm
+    message: "Add egress rule allowing port 53 UDP/TCP to kube-system — new pods resolve DNS immediately"
+  - step: remediate
+    message: "Apply NetworkPolicy patch adding egress to kube-system on port 53 UDP and TCP"
+  - step: prevent
+    message: "Add DNS connectivity test to network policy change CI gate; test in staging with fresh pods (no cache)"
+  - step: postmortem
+    message: "Staging test used pre-existing pods with warm DNS cache — didn't expose the regression."`
+  },
+  cascading_retry_storm: {
+    id: 'cascading_retry_storm', title: 'Retry Storm from Misconfigured Timeout',
+    domain: 'sre', difficulty: 'Senior',
+    yaml: `id: cascading-retry-storm
+title: "Retry Storm from Misconfigured Timeout"
+domain: sre
+difficulty: senior
+
+context:
+  service: "checkout-service → payment-service"
+  impact: "Checkout failure rate 100% · payment-service CPU at 100%"
+  slo_status: "SLO breached · incident declared"
+
+opening_message: |
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  SEV-1 INCIDENT  ·  16:47 UTC
+    Impact: Checkout is completely down
+    Service: payment-service CPU 100% · not serving requests
+    Symptom: 10x normal request volume hitting payment-service
+    Duration: 8 minutes
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Checkout is fully down. payment-service is at 100% CPU but there's been
+  no traffic increase from users. It's somehow getting 10x its normal volume.
+  All the services upstream of payment-service look healthy.
+  What's happening and how do you stop it?
+
+root_cause:
+  component: "checkout-service retry configuration (no backoff, too many retries)"
+  explanation: |
+    A config change to checkout-service set the payment API timeout to 200ms (down from 2000ms)
+    and set retry count to 5 with no backoff. payment-service occasionally takes 300ms during
+    normal load spikes. When payment-service takes >200ms, checkout-service immediately retries 5x.
+    Each retry also hits payment-service before the original request completes, amplifying load by ~5x.
+    This is enough to saturate payment-service CPU, causing all requests to take >200ms, which
+    triggers 5x retries on all of them — a self-reinforcing loop.
+  fix: "Roll back checkout-service config to timeout=2000ms, retry=2, backoff=exponential"
+  prevention: "Circuit breaker on payment-service client; load test timeout/retry configs"
+
+clues:
+  - id: clue_1
+    trigger_keywords: [request volume, traffic, rps, payment logs, metrics]
+    response: |
+      # payment-service request rate (last 30 min):
+      16:30 UTC: 500 rps  (normal)
+      16:40 UTC: 520 rps  (normal)
+      16:47 UTC: 5200 rps (10x — incident starts)
+      16:50 UTC: 5400 rps (still spiking)
+
+      # Upstream user traffic:
+      16:47 UTC: 490 rps  (flat — user traffic unchanged)
+    reveals: "10x amplification in payment-service with no upstream traffic increase — someone is retrying aggressively"
+
+  - id: clue_2
+    trigger_keywords: [checkout, retry, timeout, config, upstream caller]
+    response: |
+      # checkout-service config (current — deployed 12 minutes ago):
+      payment_api:
+        timeout_ms: 200
+        max_retries: 5
+        retry_backoff: none
+
+      # Previous config:
+      payment_api:
+        timeout_ms: 2000
+        max_retries: 2
+        retry_backoff: exponential
+    reveals: "Timeout cut from 2000ms to 200ms with 5 immediate retries — massive amplification potential if payment-service p99 exceeds 200ms"
+
+  - id: clue_3
+    trigger_keywords: [latency, payment p99, p99 latency, histogram, percentile]
+    response: |
+      # payment-service latency (before incident):
+      p50: 45ms
+      p95: 185ms
+      p99: 310ms  ← exceeds new 200ms timeout during normal load spikes
+
+      # During incident:
+      p50: 800ms  (CPU saturated — everyone slow now)
+      p99: 4200ms
+    reveals: "p99 latency already exceeded 200ms under normal load — guaranteed to trigger retries during any load spike"
+
+red_herrings:
+  - id: rh_1
+    trigger_keywords: [database, payment db, query, slow query]
+    response: |
+      $ payment-db slow query log (last 15 min)
+      Total slow queries: 0
+      DB CPU: 12%
+      Active connections: 45 / 500 max
+    note: "Database is healthy — payment-service slowdown is from CPU saturation caused by the retry storm"
+
+  - id: rh_2
+    trigger_keywords: [memory, oom, memory leak]
+    response: |
+      $ kubectl top pod -n payments
+      payment-service-7f9d-xkp2q   3980m CPU / 4000m limit (CPU: 99.5%)
+                                     512Mi MEM / 2000Mi limit (MEM: 25%)
+    note: "Memory is fine. This is pure CPU saturation — retry storm exhausting compute, not memory."
+
+turn_budget:
+  "3": "[Slack · #incidents] @oncall CEO is watching. Checkout has been down 11 minutes. What's the ETA? Do we need to roll something back?"
+  "6": "[Slack · #incidents] @oncall I was looking at the checkout-service deploy history — there was a payment API timeout config change 12 minutes ago. Timing matches."
+  "9": "[Slack · #incidents] @oncall The new timeout is 200ms. payment-service p99 is 310ms under normal load. That would trigger retries on every p99 request..."
+
+resolution_sequence:
+  - step: confirm
+    message: "Roll back checkout-service config → retry storm stops → payment-service CPU drops → checkout recovers within 60 seconds"
+  - step: remediate
+    message: "kubectl rollout undo deployment/checkout-service; verify payment-service CPU drops; verify checkout success rate recovers"
+  - step: prevent
+    message: "Add circuit breaker to payment client; load test retry configs against p99 latency; require latency profiling before timeout changes"
+  - step: postmortem
+    message: "Config change not load tested. Developer assumed 200ms was safe without checking p99. Add latency gate to config change review."`
+  },
+};
+
+const TEMPLATE_DATA = {
+  pod_not_starting: {
+    id: 'pod_not_starting', title: "Pod Won't Start",
+    domain: 'kubernetes',
+    yaml: `template_id: pod-not-starting
+display_name: "Pod Won't Start"
+domain: kubernetes
+description: >
+  Pods are stuck in a non-Running state. Root cause could be resource pressure,
+  image issues, misconfigured manifests, or node problems.
+  Claude picks one root cause and generates a unique scenario.
+
+root_causes:
+  - id: resource_quota_exceeded
+    display: "Resource Quota Exhausted"
+    difficulty: intermediate
+    explanation: >
+      Namespace ResourceQuota is exhausted. New pods are admitted but never scheduled.
+      quota describe shows the limit.
+    detection_path:
+      - "kubectl describe pod shows 'exceeded quota: requests.cpu'"
+      - "kubectl describe resourcequota -n <namespace> shows usage at limit"
+    fix: "Increase ResourceQuota OR reduce requests on new pods OR delete unused pods"
+
+  - id: image_pull_error
+    display: "Image Pull Failure"
+    difficulty: beginner
+    explanation: >
+      Pod can't pull its container image. Wrong tag, deleted image, or registry auth failure.
+      Pod loops between ErrImagePull and ImagePullBackOff.
+    detection_path:
+      - "kubectl get pods shows ImagePullBackOff"
+      - "kubectl describe pod shows 'Failed to pull image: ... 404 Not Found'"
+    fix: "Fix image tag/repository reference, or fix registry credentials"
+
+  - id: insufficient_node_resources
+    display: "Insufficient Node Resources"
+    difficulty: intermediate
+    explanation: >
+      Cluster nodes don't have enough allocatable CPU/memory. Pod stays Pending.
+    detection_path:
+      - "kubectl describe pod shows 'Insufficient cpu' or 'Insufficient memory'"
+      - "kubectl describe nodes shows allocatable vs requested — nodes are full"
+    fix: "Scale cluster (add nodes), reduce pod resource requests, or evict lower-priority workloads"
+
+  - id: node_taint_no_toleration
+    display: "Node Taint Without Toleration"
+    difficulty: senior
+    explanation: >
+      All available nodes have a taint that the pod doesn't tolerate.
+      Commonly happens when nodes are tainted for specific workloads (GPU nodes).
+    detection_path:
+      - "kubectl describe pod shows 'node(s) had untolerated taint'"
+      - "kubectl describe nodes shows taint: gpu=true:NoSchedule on all eligible nodes"
+    fix: "Add toleration to pod spec OR remove taint from a node"
+
+  - id: liveness_probe_misconfigured
+    display: "Liveness Probe Killing Pods"
+    difficulty: intermediate
+    explanation: >
+      Liveness probe fires before app finishes starting. Pod enters CrashLoopBackOff
+      with increasing restart count even though the app is healthy.
+    detection_path:
+      - "kubectl get pods shows CrashLoopBackOff with restart count rising"
+      - "kubectl logs shows app started successfully before the restart"
+      - "kubectl describe pod shows 'Liveness probe failed' in Events"
+    fix: "Increase initialDelaySeconds, fix probe path/port, or switch to startupProbe"
+
+generation_instructions: |
+  To generate a unique incident from this template:
+  1. Select one root_cause. Prefer harder root causes for senior sessions.
+  2. Generate a realistic opening_message with: pod name, namespace, visible symptoms (pod status, restart count, duration). No root cause hints.
+  3. Generate 3 clues that lead to the root cause, layered from subtle to aha.
+  4. Add 2 red herrings (logs, network, configmap) that are plausible to check but irrelevant.
+  5. Generate turn_budget Slack messages: turn 3 = pressure only, turn 6 = directional hint, turn 9 = strong hint.
+
+  Opening message format:
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  DEPLOYMENT FAILURE  ·  {TIME} UTC
+    Service: {SERVICE_NAME}
+    Symptom: {POD_COUNT} pods stuck in {STATUS} for {DURATION} minutes
+    Namespace: {NAMESPACE}
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  {2-3 sentences of observable facts. No hint. End with: "Where do you start?"}`
+  },
+  network_latency: {
+    id: 'network_latency', title: 'Network Latency',
+    domain: 'networking',
+    yaml: `template_id: network-latency
+display_name: "Network Latency"
+domain: networking
+description: >
+  Service-to-service latency is elevated. Root cause is somewhere in the network layer.
+  Claude picks one root cause and generates a unique incident.
+
+root_causes:
+  - id: mtu_mismatch
+    display: "MTU Mismatch"
+    difficulty: senior
+    explanation: >
+      One node or interface has a different MTU than the rest of the network.
+      Large packets are silently dropped or fragmented, causing retransmissions and high latency.
+    detection_path:
+      - "Small pings pass; large-payload ping (ping -M do -s 1472) fails"
+      - "ip link show reveals MTU mismatch on one interface/node"
+    fix: "Align MTU across all nodes/interfaces to 1450 (or the correct overlay value)"
+
+  - id: dns_resolution_slow
+    display: "Slow DNS Resolution"
+    difficulty: intermediate
+    explanation: >
+      DNS lookups are timing out or taking 300-800ms due to ndots:5 search-path exhaustion
+      or CoreDNS resource pressure.
+    detection_path:
+      - "dig / nslookup shows 300-800ms query times"
+      - "kubectl top pod -n kube-system shows CoreDNS at CPU limit"
+    fix: "Increase CoreDNS resources OR pin FQDN with trailing dot OR reduce ndots"
+
+  - id: tcp_retransmissions
+    display: "TCP Retransmission Storm"
+    difficulty: senior
+    explanation: >
+      Packet loss causes TCP to retransmit. Retransmit backoff multiplies the latency:
+      1% loss can add 100-500ms to p99 latency.
+    detection_path:
+      - "ss -s shows high retrans count"
+      - "netstat -s | grep retransmit shows rising counter"
+      - "tcpdump shows TCP [R] and duplicate ACK storms"
+    fix: "Identify the lossy hop with mtr; fix underlying link or route"
+
+  - id: load_balancer_misconfiguration
+    display: "Load Balancer Misconfiguration"
+    difficulty: intermediate
+    explanation: >
+      Health check interval too long is routing traffic to an unhealthy or slow backend.
+      Some requests fast, some slow — maps to which backend handles the request.
+    detection_path:
+      - "Per-backend latency metrics show one backend p99 much higher"
+      - "curl directly to backends: one is slow, others are fast"
+    fix: "Fix health check configuration or remove the slow backend"
+
+generation_instructions: |
+  To generate a unique incident from this template:
+  1. Select one root_cause appropriate for the difficulty level.
+  2. Generate a realistic opening_message: service name, latency symptoms (p99 values), duration, ticket count. No root cause hints.
+  3. Generate 3 clues layered from subtle to aha — use realistic terminal output.
+  4. Add 2 red herrings (CPU normal, memory normal, pod restarts absent).
+  5. Generate turn_budget Slack messages: turn 3 = pressure, turn 6 = directional, turn 9 = strong hint.
+
+  Opening message format:
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    🚨  INCIDENT  ·  {TIME} UTC
+    Service: {SERVICE_NAME}
+    Impact: p99 latency {VALUE}ms (baseline: {BASELINE}ms) · {TICKET_COUNT} tickets
+    Duration: {DURATION} minutes
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  {2-3 sentences of observable symptoms. No root cause. End with: "Where do you start?"}`
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const TOPICS = [
+  {slug:'kubernetes',            display:'Kubernetes — Pods & Workloads',      domain:'Kubernetes',    coverage:'full'},
+  {slug:'kubernetes_networking', display:'Kubernetes — Networking & CNI',       domain:'Kubernetes',    coverage:'full'},
+  {slug:'kubernetes_services',   display:'Kubernetes — Services & DNS',         domain:'Kubernetes',    coverage:'full'},
+  {slug:'helm',                  display:'Helm',                                domain:'Kubernetes',    coverage:'none'},
+  {slug:'linux',                 display:'Linux — Processes & Systemd',         domain:'Linux',         coverage:'full'},
+  {slug:'linux_performance',     display:'Linux — Performance & Profiling',     domain:'Linux',         coverage:'full'},
+  {slug:'linux_filesystems',     display:'Linux — Filesystems & Storage',       domain:'Linux',         coverage:'full'},
+  {slug:'terraform',             display:'Terraform — State & Backends',        domain:'Terraform',     coverage:'full'},
+  {slug:'terraform_modules',     display:'Terraform — Modules & Reuse',         domain:'Terraform',     coverage:'full'},
+  {slug:'terraform_drift',       display:'Terraform — Drift & Import',          domain:'Terraform',     coverage:'full'},
+  {slug:'aws_iam',               display:'AWS — IAM & Permissions',             domain:'AWS',           coverage:'full'},
+  {slug:'aws_autoscaling',       display:'AWS — Auto Scaling',                  domain:'AWS',           coverage:'full'},
+  {slug:'aws_load_balancing',    display:'AWS — Load Balancing',                domain:'AWS',           coverage:'full'},
+  {slug:'networking_dns',        display:'Networking — DNS',                    domain:'Networking',    coverage:'full'},
+  {slug:'networking_tcp',        display:'Networking — TCP & Tuning',           domain:'Networking',    coverage:'full'},
+  {slug:'networking_lb',         display:'Networking — Load Balancing',         domain:'Networking',    coverage:'full'},
+  {slug:'sre_slos',              display:'SRE — SLOs & Error Budgets',          domain:'SRE',           coverage:'full'},
+  {slug:'sre_incident',          display:'SRE — Incident Response',             domain:'SRE',           coverage:'full'},
+  {slug:'sre_reliability',       display:'SRE — Reliability Patterns',          domain:'SRE',           coverage:'full'},
+  {slug:'docker',                display:'Docker & Containers',                 domain:'Containers',    coverage:'none'},
+  {slug:'gcp',                   display:'Google Cloud Platform',               domain:'Cloud',         coverage:'none'},
+  {slug:'prometheus',            display:'Prometheus & Alerting',               domain:'Observability', coverage:'none'},
+  {slug:'cicd',                  display:'CI/CD Pipelines',                     domain:'Engineering',   coverage:'none'},
+  {slug:'platform',              display:'Platform Engineering',                domain:'Engineering',   coverage:'none'},
+  {slug:'troubleshooting',       display:'General Troubleshooting',             domain:'SRE',           coverage:'none'},
+];
+
+const INCIDENT_DOMAINS = [
+  {
+    id:'kubernetes', label:'Kubernetes', icon:'☸',
+    desc:'Pod failures, scheduling, resources, networking',
+    incidents:['mtu_mismatch','oom_kill_cascade'],
+    templates:['pod_not_starting'],
+  },
+  {
+    id:'linux', label:'Linux', icon:'🐧',
+    desc:'Filesystems, processes, system resources',
+    incidents:['disk_full_open_handles'],
+    templates:[],
+  },
+  {
+    id:'networking', label:'Networking', icon:'🌐',
+    desc:'DNS, MTU, latency, packet loss, connectivity',
+    incidents:['dns_blackhole'],
+    templates:['network_latency'],
+  },
+  {
+    id:'sre', label:'SRE', icon:'📊',
+    desc:'Error budgets, cascading failures, retry storms',
+    incidents:['cascading_retry_storm'],
+    templates:[],
+  },
+];
+
+const PERSONA_LIST = [
+  {id:'google_sre',        label:'Google SRE',       sub:'Intellectually rigorous. Genuinely curious. Comfortable with silence.',                  hint:'No hints during the question',          intensity:'high'},
+  {id:'friendly_mentor',   label:'Friendly Mentor',  sub:'Warm, patient. Genuinely invested in your growth. No pressure.',                         hint:'Hints freely available on request',      intensity:'low'},
+  {id:'strict_bar_raiser', label:'Bar-Raiser',       sub:'Serious. Minimal small talk. High bar. Pushes back on everything.',                       hint:'No hints. No rephrasing. Question stands.', intensity:'maximum'},
+  {id:'staff_engineer',    label:'Staff Engineer',   sub:'Thoughtful. Deliberate. Has seen many things go wrong at scale.',                         hint:'Narrows scope — no direct hints',        intensity:'medium-high'},
+  {id:'amazon_devops',     label:'Amazon DevOps',    sub:'Direct. Results-oriented. Slightly formal. Values ownership and accountability.',          hint:'No hints',                              intensity:'medium-high'},
+];
+
+const CODING_COMPANIES = [
+  {id:'google',   label:'Google'},
+  {id:'amazon',   label:'Amazon'},
+  {id:'meta',     label:'Meta'},
+  {id:'stripe',   label:'Stripe'},
+  {id:'general',  label:'General FAANG'},
+];
+
+const CODING_DIFFS = ['Mid','Senior','Staff / Principal'];
+
+const MODES = [
+  {id:'learn',      label:'Learn Concept', sub:'Socratic dialogue with follow-up questions'},
+  {id:'flashcards', label:'Flashcards',    sub:'Front/back cards, self-graded'},
+  {id:'mcq',        label:'MCQ Practice',  sub:'Scenario-based MCQ with reasoning explanations'},
+];
+
+const CODING_PHASES = ['Problem','Clarification','Approach','Walkthrough','Communication'];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const S = {
+  // Concept prep (Stage 1)
+  topic: null, diff: 'Senior', mode: 'learn', msgs: [], query: '',
+
+  // Incident (Stage 2)
+  inc: {
+    domain: null, diff: 'Senior',
+    scenario: null,    // incident key | 'tpl_{key}' | 'custom'
+    persona: 'google_sre',
+    customText: '',
+    msgs: [], turnCount: 0, hypothesis: '',
+  },
+
+  // Coding (Stage 2)
+  cod: {
+    diff: 'Senior', company: 'general',
+    source: 'auto',    // 'auto' | 'custom'
+    customText: '',
+    persona: 'google_sre',
+    msgs: [],
+  },
+
+  // Role Prep (Stage 3)
+  jd: {
+    jdText: '', resumeText: '', timeline: '', knownDetails: '', researchBrief: '',
+    blueprint: null,   // string | null — prep plan text generated by Claude
+    persona: 'google_sre',
+    topDomain: 'kubernetes',
+    level: 'Senior',
+    roleTitle: '', company: '',
+    activeMode: null,  // 'concept' | 'mock' | 'incident' | 'coding'
+    msgs: [],          // for mock interview launched from plan
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const $   = id => document.getElementById(id);
+const esc = s  => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+const claudeOk = () => typeof window.claude !== 'undefined' && typeof window.claude.complete === 'function';
+
+async function ask(prompt) {
+  if (!claudeOk()) throw new Error('Open this file in Claude.ai to enable AI.');
+  return await window.claude.complete(prompt);
+}
+
+function curriculumBadge(coverage) {
+  return coverage === 'full'
+    ? `<span class="inline-flex text-xs px-2 py-0.5 rounded-md border bg-emerald-950 border-emerald-800 text-emerald-400 font-medium">✓ Full curriculum</span>`
+    : `<span class="inline-flex text-xs px-2 py-0.5 rounded-md border bg-amber-950 border-amber-800 text-amber-400 font-medium">⚠ General knowledge</span>`;
+}
+
+function sourceBadge(type) {
+  if (type === 'handcrafted')
+    return `<span class="inline-flex text-xs px-2 py-0.5 rounded-md border bg-emerald-950 border-emerald-800 text-emerald-400 font-medium">Handcrafted Scenario</span>`;
+  if (type === 'template')
+    return `<span class="inline-flex text-xs px-2 py-0.5 rounded-md border bg-blue-950 border-blue-800 text-blue-400 font-medium">Generated from PrepOps Template</span>`;
+  return `<span class="inline-flex text-xs px-2 py-0.5 rounded-md border bg-amber-950 border-amber-800 text-amber-400 font-medium">Generated by Claude using PrepOps rules</span>`;
+}
+
+function getIncidentSourceType() {
+  const s = S.inc.scenario;
+  if (!s || s === 'custom') return 'custom';
+  if (s.startsWith('tpl_'))   return 'template';
+  if (INCIDENT_DATA[s])       return 'handcrafted';
+  return 'custom';
+}
+
+function getIncidentYaml() {
+  const s = S.inc.scenario;
+  if (!s || s === 'custom') return `Domain: ${S.inc.domain}\nCustom description: ${S.inc.customText || '(none — generate freely)'}`;
+  if (s.startsWith('tpl_')) { const k = s.slice(4); return TEMPLATE_DATA[k]?.yaml || ''; }
+  return INCIDENT_DATA[s]?.yaml || '';
+}
+
+function getCodingPhase() {
+  const n = S.cod.msgs.filter(m => m.role === 'assistant').length;
+  if (n === 0) return 0;
+  if (n === 1) return 1;
+  if (n <= 3)  return 2;
+  if (n <= 5)  return 3;
+  return 4;
+}
+
+function modeLabel(id) { return MODES.find(m => m.id === id)?.label || id; }
+function modeSub(id)   { return MODES.find(m => m.id === id)?.sub   || ''; }
+
+function jdContextBlock() {
+  if (!S.jd.blueprint) return '';
+  return `\n\n=== JD-DRIVEN SESSION ===\nThis session was launched from a role prep plan. Keep topic weights, evaluation focus, and persona from this blueprint.\n\n${S.jd.blueprint}\n\nAt the end, append the JD READINESS section (from Step 7 of the JD Parser instructions) after the standard report: list which JD requirements were demonstrated, what still needs practice, and exactly one next action. Do not claim the user will pass the interview.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONCEPT PREP PROMPTS  (Stage 1 — unchanged)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CORE = `You are PrepOps, an AI interview coach for Infrastructure, DevOps, SRE, Cloud, and Platform Engineering.
+
+Philosophy:
+- Train reasoning and production thinking — never memorization
+- Ask follow-up questions like a real technical interviewer
+- Surface misconceptions actively — name them when you see them
+- Give specific feedback; never say "good effort" without naming exactly what was good
+- Frame feedback as hiring signal: Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire
+
+Be direct, specific, production-grounded. Keep responses conversational.`;
+
+function covNote(t) {
+  return t.coverage === 'full'
+    ? `PrepOps has a full structured curriculum for "${t.display}" — use production-grounded questions, common misconceptions, and real debugging scenarios.`
+    : `PrepOps has no structured curriculum for "${t.display}" — draw on general knowledge and be upfront about it.`;
+}
+
+const MPROMPTS = {
+  learn: t =>
+`Mode: Learn Concept | Topic: ${t.display} | Level: ${S.diff}
+${covNote(t)}
+
+Run an adaptive Socratic session. Open with ONE concrete, production-grounded question — not "what is X", ask "walk me through what happens when…" or "when would you choose X over Y?". Probe based on their answer; one follow-up at a time. After 5-7 exchanges surface the key misconception most engineers have about this topic. Keep responses tight. Ask your opening question now.`,
+
+  flashcards: t =>
+`Mode: Flashcards | Topic: ${t.display} | Level: ${S.diff}
+${covNote(t)}
+
+Generate one flashcard at a time. Show only the FRONT first. Wait for user response, then show BACK.
+
+FRONT: [Production-grounded question — test "why" and "what breaks", not definitions]
+
+After user responds:
+BACK: [2-4 sentence answer. Key insight + why it matters in production. Not a textbook definition.]
+
+Then ask: "How'd that go? Got it / Almost / Missed it"
+Adjust difficulty based on self-grade. Start with card 1 — show only the FRONT.`,
+
+  mcq: t =>
+`Mode: MCQ Practice | Topic: ${t.display} | Level: ${S.diff}
+${covNote(t)}
+
+Generate one scenario-based MCQ at a time.
+
+Q: [Scenario — not a definition. "You notice X symptom, what's the most likely cause?"]
+A) …  B) …  C) …  D) …
+
+After user answers: name the correct answer, explain WHY it's correct (the principle), explain what makes the wrong options wrong, state the production implication. Then ask if they're ready for the next question. Start with question 1 now.`,
+};
+
+function buildInit()      { return `${CORE}${jdContextBlock()}\n\n${MPROMPTS[S.mode](S.topic)}\n\nPrepOps:`; }
+function buildTurn(msg)   { const h=S.msgs.map(m=>`${m.role==='user'?'User':'PrepOps'}: ${m.content}`).join('\n\n'); return `${CORE}${jdContextBlock()}\n\n${MPROMPTS[S.mode](S.topic)}\n\nConversation so far:\n${h}\n\nUser: ${msg}\n\nPrepOps:`; }
+function buildReport() {
+  const ml=modeLabel(S.mode), ex=S.msgs.filter(m=>m.role==='user').length;
+  const txt=S.msgs.map(m=>`${m.role==='user'?'User':'PrepOps'}: ${m.content}`).join('\n\n');
+  return `Generate a concise PrepOps session report.
+
+Topic: ${S.topic.display} | Mode: ${ml} | Level: ${S.diff} | Exchanges: ${ex}
+${S.jd.blueprint ? `JD context: ${S.jd.roleTitle} at ${S.jd.company} — append JD READINESS section after the standard report.` : ''}
+
+Session transcript:
+${txt}
+
+${ex<3?'NOTE: Very short session — note this at the top.\n\n':''}Write the report in this exact format:
+
+OVERALL ASSESSMENT
+[Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire]
+[One specific sentence explaining what drove that signal — cite the actual exchange]
+
+STRENGTHS
+1. [Specific — name what they said or did correctly and why it matters]
+2. [Specific strength]
+3. [Specific strength — write only what you have if session was short]
+
+AREAS TO IMPROVE
+1. [Specific gap — name what was missing and the production implication]
+2. [Specific gap]
+3. [Specific gap — write only what you have if session was short]
+
+NEXT SESSION
+Topic: [specific topic recommendation]
+Mode: [Learn Concept / Flashcards / MCQ Practice]
+Why: [One sentence — what this session revealed that makes this the right next step]
+
+Every point must be specific. Hire signal must be one of the 5 options above exactly.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INCIDENT PROMPTS  (Stage 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function buildIncidentInit() {
+  const p    = PERSONA_DATA[S.inc.persona];
+  const yaml = getIncidentYaml();
+  const type = getIncidentSourceType();
+  const srcNote = type === 'handcrafted'
+    ? 'USE THE INCIDENT YAML BELOW EXACTLY. Follow its opening_message, clues, red_herrings, turn_budget, and resolution_sequence precisely.'
+    : type === 'template'
+    ? `USE THE INCIDENT TEMPLATE BELOW. Select one root_cause appropriate for difficulty: ${S.inc.diff}. Generate a unique incident following the template generation_instructions exactly.`
+    : `GENERATE A UNIQUE PRODUCTION INCIDENT for domain: ${S.inc.domain}, difficulty: ${S.inc.diff}. Custom description: "${S.inc.customText || 'none — generate freely'}". Apply all rules from the INCIDENT ENGINE below.`;
+
+  return `${CORE}${jdContextBlock()}
+
+=== INCIDENT ENGINE ===
+${SCENARIOS_PROMPT}
+
+=== PERSONA ===
+${p.yaml}
+
+=== INCIDENT ===
+${yaml}
+
+=== SOURCE INSTRUCTIONS ===
+${srcNote}
+
+DOMAIN: ${S.inc.domain} | DIFFICULTY: ${S.inc.diff}
+
+You are PrepOps running the Production Incident Simulator. The user is the on-call engineer.
+Rules:
+- Begin with ONLY the incident opening_message (formatted with the ━ borders)
+- NEVER reveal root_cause, clue triggers, or red_herring labels in the UI
+- Respond as the terminal, monitoring system, and colleagues — never as a coach
+- Inject Slack turn-budget messages at the correct turns (3/6/9/12)
+- Apply clue layering: subtle clue 1, deeper clue 2, aha clue 3 — triggered by relevant commands/keywords
+- When user correctly identifies root cause: run resolution_sequence (confirm → remediate → prevent → postmortem)
+- No hiring signal in incident mode
+
+Begin the incident now — opening_message only:`;
+}
+
+function buildIncidentTurn(userMsg) {
+  const p    = PERSONA_DATA[S.inc.persona];
+  const yaml = getIncidentYaml();
+  const h    = S.inc.msgs.map(m => `${m.role==='user'?'Engineer':'System'}: ${m.content}`).join('\n\n');
+  return `${CORE}${jdContextBlock()}
+
+=== INCIDENT ENGINE ===
+${SCENARIOS_PROMPT}
+
+=== PERSONA ===
+${p.yaml}
+
+=== INCIDENT ===
+${yaml}
+
+=== SESSION CONTEXT ===
+Turn count: ${S.inc.turnCount}
+Engineer hypothesis: "${S.inc.hypothesis || 'not stated'}"
+
+=== CONVERSATION ===
+${h}
+
+Engineer: ${userMsg}
+
+System (respond as terminal/environment/colleagues per INCIDENT ENGINE rules; inject Slack message if this is turn 3/6/9/12; layer clues based on keywords; do NOT reveal root cause or hint labels):`;
+}
+
+function buildIncidentDebrief() {
+  const h    = S.inc.msgs.map(m => `${m.role==='user'?'Engineer':'System'}: ${m.content}`).join('\n\n');
+  const yaml = getIncidentYaml();
+  return `Generate the PrepOps incident debrief for this simulation.
+
+=== INCIDENT ===
+${yaml}
+
+=== SESSION ===
+Domain: ${S.inc.domain} | Difficulty: ${S.inc.diff} | Persona: ${PERSONA_DATA[S.inc.persona].name}
+Turns taken: ${S.inc.turnCount}
+
+=== TRANSCRIPT ===
+${h}
+
+Generate the INCIDENT DEBRIEF using the Investigation Scoring format from scenarios.md:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  INCIDENT DEBRIEF · [incident title]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Resolution:   [SOLVED INDEPENDENTLY / SOLVED WITH HINTS / REVEALED]
+  Turns taken:  [n]
+  Hints used:   [n]
+
+  Methodology      ★★★★☆  — [one line]
+  Speed            ★★★☆☆  — [one line]
+  Production Focus ★★★★★  — [one line]
+  Remediation      ★★★☆☆  — [one line]
+
+  WHAT THEY DID WELL
+  ✦ [specific]
+  ✦ [specific]
+
+  WHAT SLOWED THEM DOWN
+  ✗ [specific wrong turn or missed signal]
+    The clue was: [what they should have checked]
+
+  ROOT CAUSE EXPLAINED
+  [Full technical explanation: what happened, why those symptoms, the fix, prevention]
+
+  STUDY RECOMMENDATION
+  → [specific topic to review]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Note at end: "Incident simulations do not produce a hiring signal. Use Mock Interview mode for that."
+${S.jd.blueprint ? `\nJD context: ${S.jd.roleTitle} at ${S.jd.company} — append JD READINESS section after the debrief: which JD requirements were demonstrated, what still needs practice, and one next action.` : ''}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CODING PROMPTS  (Stage 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function buildCodingInit() {
+  const p      = PERSONA_DATA[S.cod.persona];
+  const problem = S.cod.source === 'custom'
+    ? `USER-PROVIDED PROBLEM:\n${S.cod.customText}\n\nPresent this problem following Step 2 of the mode instructions (exact statement, examples, constraints, then ask for clarifying questions).`
+    : `AUTO-SELECT a problem for: Company = ${S.cod.company}, Difficulty = ${S.cod.diff}. Follow the Problem Selection rules in the mode instructions. Do NOT pick ops-flavored problems for standard FAANG coding rounds.`;
+  return `${CORE}${jdContextBlock()}
+
+=== CODING REASONING MODE ===
+${CODING_PROMPT}
+
+=== PERSONA ===
+${p.yaml}
+
+=== PROBLEM ===
+${problem}
+
+Apply the 7-step Coding Reasoning flow. Begin with Step 2: present the problem clearly with examples and constraints, then ask for clarifying questions.`;
+}
+
+function buildCodingTurn(userMsg) {
+  const p = PERSONA_DATA[S.cod.persona];
+  const h = S.cod.msgs.map(m => `${m.role==='user'?'Candidate':'Interviewer'}: ${m.content}`).join('\n\n');
+  return `${CORE}${jdContextBlock()}
+
+=== CODING REASONING MODE ===
+${CODING_PROMPT}
+
+=== PERSONA ===
+${p.yaml}
+
+=== CONVERSATION ===
+${h}
+
+Candidate: ${userMsg}
+
+Interviewer (continue the Coding Reasoning flow; if candidate has completed approach + walkthrough + communication check, you may show the Optimal Approach Reveal):`;
+}
+
+function buildCodingReveal() {
+  const h = S.cod.msgs.map(m => `${m.role==='user'?'Candidate':'Interviewer'}: ${m.content}`).join('\n\n');
+  return `${CORE}${jdContextBlock()}
+
+=== CODING REASONING MODE ===
+${CODING_PROMPT}
+
+=== CONVERSATION ===
+${h}
+
+The session is ending. Generate the full OPTIMAL APPROACH REVEAL from Step 6 of the mode instructions. Include all sections: key insight, optimal pattern, why it works, complexity (with explanation), strong candidate answer (verbatim 3-5 sentences), common mistakes, and how their approach compared. Be specific — reference what the candidate actually said.`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUBBLE HTML
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function conceptBubble(role, content) {
+  const e = esc(content);
+  if (role === 'user') return `
+    <div class="flex justify-end mb-5">
+      <div class="max-w-[78%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-indigo-600 text-white rounded-2xl rounded-br-sm">${e}</div>
+      <div class="w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white ml-2.5 mt-0.5 flex-shrink-0">U</div>
+    </div>`;
+  return `
+    <div class="flex justify-start mb-5">
+      <div class="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white mr-2.5 mt-0.5 flex-shrink-0">P</div>
+      <div class="max-w-[78%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-slate-800 text-slate-100 rounded-2xl rounded-bl-sm border border-slate-700">${e}</div>
+    </div>`;
+}
+
+function incidentBubble(role, content) {
+  const e      = esc(content);
+  const isSlack = content.startsWith('[Slack');
+  if (role === 'user') return `
+    <div class="mb-3 term text-sm">
+      <span class="text-green-500 select-none">$ </span><span class="text-green-200 whitespace-pre-wrap">${e}</span>
+    </div>`;
+  if (isSlack) return `
+    <div class="mb-3 px-4 py-3 rounded-xl border border-amber-900/50 bg-amber-950/20 term text-sm text-amber-300 whitespace-pre-wrap leading-relaxed">${e}</div>`;
+  return `
+    <div class="mb-3 px-4 py-3 rounded-xl bg-slate-900 border border-slate-800 term text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">${e}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HOME
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const FLOWS = [
+  {id:'concept',  stage:1, ok:true,  icon:'📚', title:'Concept Prep',         desc:'Adaptive Socratic teaching, flashcards, and MCQ for any infrastructure topic.',          cta:'Choose a topic →',       action:'showSetup()'},
+  {id:'incident', stage:2, ok:true,  icon:'🚨', title:'Production Scenarios',  desc:'Live incident simulation — you\'re on-call, PrepOps responds as the terminal.',          cta:'Start an incident →',    action:'showIncidentSetup()'},
+  {id:'debugging',stage:2, ok:false, icon:'🔬', title:'Debugging Lab',         desc:'Broken configs and outputs — diagnose root cause and propose a fix.'},
+  {id:'coding',   stage:2, ok:true,  icon:'⚡', title:'Coding Reasoning',      desc:'Problem walkthrough: approach, complexity, communication, and optimal reveal.',           cta:'Start a problem →',      action:'showCodingSetup()'},
+  {id:'jd',       stage:3, ok:true,  icon:'🎯', title:'Prepare for a Role',   desc:'Paste a job description — PrepOps generates a prep plan, gap analysis, and targeted sessions for the role.',  cta:'Start role prep →',  action:'showRolePrepSetup()'},
+  {id:'mock',     stage:4, ok:false, icon:'🗣', title:'Mock Interview',        desc:'Full persona-driven interview with hiring-signal feedback at the end.'},
+  {id:'design',   stage:4, ok:false, icon:'🏗️', title:'System Design',         desc:'Design an infrastructure system end-to-end with adversarial follow-ups.'},
+];
+
+function showHome() {
+  const cards = FLOWS.map(f => `
+    <button ${f.ok ? `onclick="${f.action}"` : 'disabled'}
+      class="relative text-left p-5 rounded-xl border transition-all ${f.ok ? 'bg-slate-900 border-slate-700 hover:border-indigo-500 hover:bg-slate-800 cursor-pointer' : 'bg-slate-900/40 border-slate-800/60 cursor-not-allowed'}">
+      ${!f.ok ? `<span class="absolute top-3 right-3 text-xs text-slate-600 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">Stage ${f.stage}</span>` : ''}
+      <div class="text-2xl mb-3">${f.icon}</div>
+      <h3 class="font-semibold text-sm mb-1.5 ${f.ok ? 'text-white' : 'text-slate-500'}">${esc(f.title)}</h3>
+      <p class="text-xs leading-relaxed ${f.ok ? 'text-slate-400' : 'text-slate-600'}">${esc(f.desc)}</p>
+      ${f.ok ? `<div class="mt-4 text-indigo-400 text-xs font-medium">${f.cta}</div>` : ''}
+    </button>`).join('');
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-5xl mx-auto flex items-center justify-between">
+          <div>
+            <span class="text-white font-bold text-lg">PrepOps</span>
+            <span class="text-slate-500 text-xs ml-3">Infrastructure · DevOps · SRE · Cloud</span>
+          </div>
+          ${!claudeOk() ? `<div class="text-xs bg-amber-950 border border-amber-800 text-amber-400 px-3 py-1.5 rounded-lg">⚠ Open in Claude.ai to enable AI</div>` : ''}
+        </div>
+      </div>
+      <div class="max-w-5xl mx-auto px-6 pt-12 pb-8">
+        <h1 class="text-3xl font-bold text-white mb-3">What would you like to practice?</h1>
+        <p class="text-slate-400">Adaptive coaching, production scenarios, and hiring-signal feedback.</p>
+      </div>
+      <div class="max-w-5xl mx-auto px-6 pb-16">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards}</div>
+        <p class="mt-8 text-center text-slate-600 text-xs">PrepOps trains reasoning, not memorization · AI billed to your Claude.ai account</p>
+      </div>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONCEPT PREP VIEWS  (Stage 1 — unchanged from stage1.html)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function dropHTML() {
+  const q = S.query;
+  const list = q.length === 0
+    ? TOPICS.filter(t => t.coverage === 'full').slice(0, 9)
+    : TOPICS.filter(t =>
+        t.display.toLowerCase().includes(q.toLowerCase()) ||
+        t.domain.toLowerCase().includes(q.toLowerCase())
+      ).slice(0, 8);
+  const hasCustom = q.trim() && !TOPICS.find(t => t.display.toLowerCase() === q.trim().toLowerCase());
+
+  const rows = list.map((t,i) => `
+    <button onmousedown="pickTopic('${esc(t.slug)}')"
+      class="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 transition-colors ${i < list.length-1 || hasCustom ? 'border-b border-slate-800' : ''}">
+      <span>
+        <span class="text-white">${esc(t.display)}</span>
+        <span class="text-slate-600 text-xs ml-2">${esc(t.domain)}</span>
+      </span>
+      ${curriculumBadge(t.coverage)}
+    </button>`).join('');
+
+  const customRow = hasCustom ? `
+    <button onmousedown="pickCustom()"
+      class="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 bg-slate-800/40 border-t border-slate-700">
+      <span class="text-indigo-400">Use "${esc(q.trim())}" as custom topic</span>
+      ${curriculumBadge('none')}
+    </button>` : '';
+
+  const empty = list.length === 0 && !hasCustom ? `<div class="px-4 py-3 text-slate-500 text-sm">No matches</div>` : '';
+  return `<div class="absolute z-20 w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">${rows}${customRow}${empty}</div>`;
+}
+
+function showSetup() {
+  S.query = S.topic ? S.topic.display : '';
+
+  const diffBtns = ['Junior','Mid','Senior','Staff'].map(d => `
+    <button onclick="pickDiff('${d}')" id="diff-${d}"
+      class="px-4 py-2 rounded-lg text-sm font-medium border transition-all ${S.diff===d ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}">
+      ${d}
+    </button>`).join('');
+
+  const modeBtns = MODES.map(m => `
+    <button onclick="pickMode('${m.id}')" id="mode-${m.id}"
+      class="w-full text-left px-4 py-3.5 rounded-xl border transition-all ${S.mode===m.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}">
+      <div class="text-sm font-medium ${S.mode===m.id ? 'text-indigo-300' : 'text-slate-300'}">${m.label}</div>
+      <div class="text-xs text-slate-500 mt-0.5">${m.sub}</div>
+    </button>`).join('');
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-2xl mx-auto flex items-center gap-4">
+          <button onclick="showHome()" class="text-slate-400 hover:text-white text-sm transition-colors">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Concept Prep</span>
+        </div>
+      </div>
+      <div class="max-w-2xl mx-auto px-6 py-10 space-y-10">
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">What would you like to study?</label>
+          <div class="relative">
+            <input id="topic-inp" type="text" value="${esc(S.query)}" autocomplete="off"
+              placeholder="Search topics, or type anything…"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 pr-44 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+            <div id="badge-slot" class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">${S.topic ? curriculumBadge(S.topic.coverage) : ''}</div>
+            <div id="drop"></div>
+          </div>
+          <p id="cov-msg" class="mt-2 text-xs text-slate-500">
+            ${S.topic ? (S.topic.coverage==='full' ? '✅ Full PrepOps curriculum — structured concepts, misconceptions, and production scenarios.' : '⚠ General knowledge mode — no structured curriculum for this topic.') : ''}
+          </p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Difficulty</label>
+          <div class="flex gap-2 flex-wrap">${diffBtns}</div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Mode</label>
+          <div class="space-y-2">${modeBtns}</div>
+        </div>
+        <button id="go-btn" onclick="showConceptReview()"
+          class="w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${S.topic ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}"
+          ${S.topic ? '' : 'disabled'}>
+          ${S.topic ? `Start ${modeLabel(S.mode)} →` : 'Select a topic to continue'}
+        </button>
+      </div>
+    </div>`;
+
+  const inp = $('topic-inp');
+  inp.addEventListener('input', () => {
+    S.query = inp.value; S.topic = null;
+    $('drop').innerHTML = dropHTML();
+    $('badge-slot').innerHTML = ''; $('cov-msg').textContent = '';
+    refreshGoBtn();
+  });
+  inp.addEventListener('focus', () => { $('drop').innerHTML = dropHTML(); });
+  inp.addEventListener('blur',  () => { setTimeout(() => { $('drop').innerHTML = ''; }, 160); });
+}
+
+window.pickTopic = function(slug) {
+  const t = TOPICS.find(x => x.slug === slug);
+  if (!t) return;
+  S.topic = t; S.query = t.display;
+  $('topic-inp').value = t.display;
+  $('drop').innerHTML = '';
+  $('badge-slot').innerHTML = curriculumBadge(t.coverage);
+  $('cov-msg').textContent = t.coverage==='full'
+    ? '✅ Full PrepOps curriculum — structured concepts, misconceptions, and production scenarios.'
+    : '⚠ General knowledge mode — no structured curriculum for this topic.';
+  refreshGoBtn();
+};
+
+window.pickCustom = function() {
+  S.topic = { slug:'custom', display:S.query.trim(), domain:'Custom', coverage:'none' };
+  $('drop').innerHTML = '';
+  $('badge-slot').innerHTML = curriculumBadge('none');
+  $('cov-msg').textContent = '⚠ General knowledge mode — no structured curriculum for this topic.';
+  refreshGoBtn();
+};
+
+window.pickDiff = function(d) {
+  S.diff = d;
+  ['Junior','Mid','Senior','Staff'].forEach(v => {
+    const b = $(`diff-${v}`); if (!b) return;
+    b.className = `px-4 py-2 rounded-lg text-sm font-medium border transition-all ${S.diff===v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}`;
+  });
+};
+
+window.pickMode = function(id) {
+  S.mode = id;
+  MODES.forEach(m => {
+    const b = $(`mode-${m.id}`); if (!b) return;
+    b.className = `w-full text-left px-4 py-3.5 rounded-xl border transition-all ${S.mode===m.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}`;
+    b.querySelector('div').className = `text-sm font-medium ${S.mode===m.id ? 'text-indigo-300' : 'text-slate-300'}`;
+  });
+  refreshGoBtn();
+};
+
+function refreshGoBtn() {
+  const btn = $('go-btn'); if (!btn) return;
+  if (S.topic) {
+    btn.disabled = false;
+    btn.className = 'w-full py-3.5 rounded-xl font-semibold text-sm transition-all bg-indigo-600 hover:bg-indigo-500 text-white';
+    btn.textContent = `Start ${modeLabel(S.mode)} →`;
+  } else {
+    btn.disabled = true;
+    btn.className = 'w-full py-3.5 rounded-xl font-semibold text-sm transition-all bg-slate-800 text-slate-600 cursor-not-allowed';
+    btn.textContent = 'Select a topic to continue';
+  }
+}
+
+window.showConceptReview = function() {
+  if (!S.topic) return;
+  S.msgs = [];
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-xl mx-auto flex items-center gap-4">
+          <button onclick="showSetup()" class="text-slate-400 hover:text-white text-sm">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Session Review</span>
+        </div>
+      </div>
+      <div class="flex-1 flex items-center justify-center px-6 py-16">
+        <div class="w-full max-w-xl">
+          <p class="text-slate-400 text-sm mb-6">Review your settings before starting.</p>
+          <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden mb-6">
+            <div class="px-5 py-4 border-b border-slate-800 flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Topic</div>
+                <div class="text-white font-semibold text-base">${esc(S.topic.display)}</div>
+              </div>
+              ${curriculumBadge(S.topic.coverage)}
+            </div>
+            <div class="grid grid-cols-2 divide-x divide-slate-800">
+              <div class="px-5 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Difficulty</div>
+                <div class="text-white font-medium">${esc(S.diff)}</div>
+              </div>
+              <div class="px-5 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Mode</div>
+                <div class="text-white font-medium">${esc(modeLabel(S.mode))}</div>
+                <div class="text-slate-500 text-xs mt-0.5">${esc(modeSub(S.mode))}</div>
+              </div>
+            </div>
+            ${S.topic.coverage==='none' ? `<div class="px-5 py-3 bg-amber-950/40 border-t border-amber-900/50"><p class="text-amber-400 text-xs">⚠ No structured curriculum — PrepOps will use general knowledge.</p></div>` : ''}
+          </div>
+          <button onclick="beginSession()" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-sm">Begin Session →</button>
+          <button onclick="showSetup()" class="w-full mt-3 py-2.5 text-slate-500 hover:text-slate-300 text-sm">← Change settings</button>
+        </div>
+      </div>
+    </div>`;
+};
+
+window.beginSession = async function() {
+  renderConceptShell();
+  setConceptLoad(true);
+  try {
+    const res = await ask(buildInit());
+    S.msgs.push({role:'assistant', content:res});
+    setConceptLoad(false);
+    addConceptBubble('assistant', res);
+  } catch(e) { setConceptLoad(false); showConceptErr(e.message); }
+};
+
+function renderConceptShell() {
+  $('app').innerHTML = `
+    <div style="display:flex;flex-direction:column;height:100vh" class="bg-slate-950 text-slate-100">
+      <div class="flex-shrink-0 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <button onclick="showSetup()" class="text-slate-500 hover:text-white text-sm flex-shrink-0">←</button>
+          <span class="text-white text-sm font-medium truncate">${esc(S.topic.display)}</span>
+        </div>
+        <button onclick="showReport()" class="flex-shrink-0 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg">End session →</button>
+      </div>
+      <div id="msg-scroll" class="hs" style="flex:1;overflow-y:auto">
+        <div class="max-w-3xl mx-auto px-4 pt-4 pb-6">
+          <div class="mb-5 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap text-xs text-slate-400">
+            <span class="font-medium text-slate-300">${esc(modeLabel(S.mode))}</span>
+            <span class="text-slate-700">·</span><span>${esc(S.diff)}</span>
+            <span class="text-slate-700">·</span>${curriculumBadge(S.topic.coverage)}
+            <span class="ml-auto text-slate-600" id="ex-ct">0 exchanges</span>
+          </div>
+          <div id="msg-list"></div>
+          <div id="load-dots" style="display:none" class="flex items-center gap-2 px-4 py-3 text-slate-400 text-sm">
+            <div class="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">P</div>
+            <span>PrepOps is thinking</span>
+            <span class="flex gap-0.5 ml-0.5"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+          </div>
+          <div id="sess-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl mb-4"></div>
+          <div id="anchor"></div>
+        </div>
+      </div>
+      <div class="flex-shrink-0 border-t border-slate-800 px-4 py-4">
+        <div class="max-w-3xl mx-auto flex gap-3">
+          <textarea id="inp" rows="2" placeholder="Your answer… (Enter to send, Shift+Enter for newline)"
+            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none"></textarea>
+          <button id="send-btn" class="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 rounded-xl text-sm font-medium">Send</button>
+        </div>
+        <p class="max-w-3xl mx-auto mt-2 text-right text-xs text-slate-700">Responses billed to your Claude.ai account</p>
+      </div>
+    </div>`;
+  $('send-btn').addEventListener('click', sendConceptMsg);
+  $('inp').addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendConceptMsg(); } });
+}
+
+function addConceptBubble(role, content) {
+  const list = $('msg-list'); if (!list) return;
+  const d = document.createElement('div');
+  d.innerHTML = conceptBubble(role, content);
+  list.appendChild(d);
+  const n = S.msgs.filter(m => m.role==='user').length;
+  const ct = $('ex-ct'); if (ct) ct.textContent = `${n} exchange${n!==1?'s':''}`;
+  $('anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+function setConceptLoad(on) {
+  const el = $('load-dots'); if (el) el.style.display = on ? 'flex' : 'none';
+  const btn = $('send-btn'), inp = $('inp');
+  if (btn) btn.disabled = on;
+  if (inp) inp.disabled = on;
+}
+
+function showConceptErr(msg) {
+  const el = $('sess-err'); if (!el) return;
+  el.style.display = 'block'; el.textContent = msg;
+  $('anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+async function sendConceptMsg() {
+  const inp = $('inp'); if (!inp) return;
+  const txt = inp.value.trim(); if (!txt) return;
+  inp.value = '';
+  const errEl = $('sess-err'); if (errEl) errEl.style.display = 'none';
+  S.msgs.push({role:'user', content:txt});
+  addConceptBubble('user', txt);
+  setConceptLoad(true);
+  try {
+    const res = await ask(buildTurn(txt));
+    S.msgs.push({role:'assistant', content:res});
+    setConceptLoad(false);
+    addConceptBubble('assistant', res);
+  } catch(e) { S.msgs.pop(); setConceptLoad(false); showConceptErr(e.message); }
+}
+
+window.showReport = async function() {
+  const ml = modeLabel(S.mode), ex = S.msgs.filter(m=>m.role==='user').length;
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 class="text-white font-semibold text-sm">Session Report</h1>
+            <p class="text-slate-500 text-xs mt-0.5">${esc(S.topic.display)} · ${esc(ml)} · ${esc(S.diff)} · ${ex} exchange${ex!==1?'s':''}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="showSetup()" class="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">New session</button>
+            <button onclick="showHome()" class="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg">Home</button>
+          </div>
+        </div>
+      </div>
+      <div class="max-w-3xl mx-auto px-6 py-10">
+        <div id="rpt-load" class="flex flex-col items-center gap-4 py-20">
+          <div class="flex gap-1"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <p class="text-slate-400 text-sm">Generating your session report…</p>
+        </div>
+        <div id="rpt-box" style="display:none" class="bg-slate-900 border border-slate-700 rounded-xl p-6">
+          <pre id="rpt-txt" class="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap overflow-x-auto"></pre>
+        </div>
+        <div id="rpt-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl"></div>
+        <div id="rpt-foot" style="display:none" class="mt-8 flex justify-center">
+          <button onclick="showSetup()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium">Practice again →</button>
+        </div>
+      </div>
+    </div>`;
+  try {
+    const res = await ask(buildReport());
+    $('rpt-load').style.display = 'none';
+    $('rpt-txt').textContent = res;
+    $('rpt-box').style.display = 'block';
+    $('rpt-foot').style.display = 'flex';
+  } catch(e) {
+    $('rpt-load').style.display = 'none';
+    $('rpt-err').style.display = 'block';
+    $('rpt-err').textContent = e.message;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INCIDENT VIEWS  (Stage 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+window.showIncidentSetup = function() {
+  S.inc = { domain:null, diff:'Senior', scenario:null, persona:'google_sre', customText:'', msgs:[], turnCount:0, hypothesis:'' };
+  renderIncidentSetup();
+};
+
+function renderIncidentSetup() {
+  const domainCards = INCIDENT_DOMAINS.map(d => `
+    <button onclick="pickIncDomain('${d.id}')" id="incd-${d.id}"
+      class="text-left p-4 rounded-xl border transition-all ${S.inc.domain===d.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}">
+      <div class="text-xl mb-2">${d.icon}</div>
+      <div class="text-sm font-medium ${S.inc.domain===d.id ? 'text-indigo-300' : 'text-slate-300'}">${d.label}</div>
+      <div class="text-xs text-slate-500 mt-0.5">${d.desc}</div>
+    </button>`).join('');
+
+  const scenarioSection = S.inc.domain ? renderScenarioOptions() : `<p class="text-slate-500 text-sm">← Select a domain first</p>`;
+
+  const personaBtns = PERSONA_LIST.map(p => `
+    <button onclick="pickIncPersona('${p.id}')" id="incp-${p.id}"
+      class="w-full text-left px-4 py-3 rounded-xl border transition-all ${S.inc.persona===p.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}">
+      <div class="flex items-center justify-between gap-3">
+        <div class="text-sm font-medium ${S.inc.persona===p.id ? 'text-indigo-300' : 'text-slate-300'}">${p.label}</div>
+        <span class="text-xs text-slate-600 flex-shrink-0">${p.intensity} followup</span>
+      </div>
+      <div class="text-xs text-slate-500 mt-0.5">${p.sub}</div>
+      <div class="text-xs text-slate-600 mt-1">${p.hint}</div>
+    </button>`).join('');
+
+  const canStart = S.inc.domain && (S.inc.scenario || S.inc.customText.trim());
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-2xl mx-auto flex items-center gap-4">
+          <button onclick="showHome()" class="text-slate-400 hover:text-white text-sm">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Production Scenarios</span>
+        </div>
+      </div>
+      <div class="max-w-2xl mx-auto px-6 py-10 space-y-10">
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Domain</label>
+          <div class="grid grid-cols-2 gap-3">${domainCards}</div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Scenario</label>
+          <div id="scenario-section" class="space-y-2">${scenarioSection}</div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Interviewer Persona</label>
+          <div class="space-y-2">${personaBtns}</div>
+        </div>
+
+        <button id="inc-start-btn" onclick="showIncidentReview()"
+          class="w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${canStart ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}"
+          ${canStart ? '' : 'disabled'}>
+          ${canStart ? 'Review & Start →' : 'Select domain and scenario to continue'}
+        </button>
+
+      </div>
+    </div>`;
+}
+
+function renderScenarioOptions() {
+  const domain = INCIDENT_DOMAINS.find(d => d.id === S.inc.domain);
+  if (!domain) return '';
+
+  const handcrafted = domain.incidents.map(id => {
+    const inc = INCIDENT_DATA[id];
+    return `
+      <button onclick="pickIncScenario('${id}')" id="incs-${id}"
+        class="w-full text-left px-4 py-3 rounded-xl border transition-all ${S.inc.scenario===id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <span class="text-sm font-medium ${S.inc.scenario===id ? 'text-indigo-300' : 'text-slate-300'}">${esc(inc.title)}</span>
+          <div class="flex gap-2 items-center">
+            <span class="text-xs text-slate-500">${inc.difficulty}</span>
+            ${sourceBadge('handcrafted')}
+          </div>
+        </div>
+      </button>`;
+  }).join('');
+
+  const templates = domain.templates.map(id => {
+    const tpl = TEMPLATE_DATA[id];
+    return `
+      <button onclick="pickIncScenario('tpl_${id}')" id="incs-tpl_${id}"
+        class="w-full text-left px-4 py-3 rounded-xl border transition-all ${S.inc.scenario==='tpl_'+id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <span class="text-sm font-medium ${S.inc.scenario==='tpl_'+id ? 'text-indigo-300' : 'text-slate-300'}">${esc(tpl.title)} — generated</span>
+          <div class="flex gap-2 items-center">
+            ${renderDiffSelect(id)}
+            ${sourceBadge('template')}
+          </div>
+        </div>
+      </button>`;
+  }).join('');
+
+  const customSection = `
+    <div class="rounded-xl border ${S.inc.scenario==='custom' ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700'}">
+      <button onclick="pickIncScenario('custom')"
+        class="w-full text-left px-4 py-3">
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-sm font-medium ${S.inc.scenario==='custom' ? 'text-indigo-300' : 'text-slate-300'}">Custom scenario</span>
+          ${sourceBadge('custom')}
+        </div>
+      </button>
+      ${S.inc.scenario==='custom' ? `
+        <div class="px-4 pb-4 space-y-2">
+          <textarea id="custom-inc-txt" rows="3" placeholder="Describe the scenario you want to debug… (or leave blank for a random incident in this domain)"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+            oninput="S.inc.customText=this.value;refreshIncStartBtn()">${esc(S.inc.customText)}</textarea>
+          <p class="text-xs text-slate-600">Claude generates this scenario from its training knowledge — PrepOps engine rules and your selected persona still apply. Live web access is not available in Claude.ai artifacts.</p>
+        </div>` : ''}
+    </div>`;
+
+  return (handcrafted || templates ? `<div class="space-y-2">${handcrafted}${templates}</div>` : '') + customSection;
+}
+
+function renderDiffSelect(tplId) {
+  return `<select onchange="S.inc.diff=this.value" onclick="event.stopPropagation()"
+    class="text-xs bg-slate-800 border border-slate-600 text-slate-300 rounded px-2 py-1">
+    <option value="Intermediate" ${S.inc.diff==='Intermediate'?'selected':''}>Intermediate</option>
+    <option value="Senior" ${S.inc.diff==='Senior'?'selected':''}>Senior</option>
+  </select>`;
+}
+
+window.pickIncDomain = function(id) {
+  S.inc.domain = id; S.inc.scenario = null; S.inc.customText = '';
+  const allDomBtns = INCIDENT_DOMAINS.map(d=>d.id);
+  allDomBtns.forEach(did => {
+    const b = $(`incd-${did}`); if (!b) return;
+    b.className = `text-left p-4 rounded-xl border transition-all ${S.inc.domain===did ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}`;
+    b.querySelector('div:nth-child(2)').className = `text-sm font-medium ${S.inc.domain===did ? 'text-indigo-300' : 'text-slate-300'}`;
+  });
+  $('scenario-section').innerHTML = renderScenarioOptions();
+  refreshIncStartBtn();
+};
+
+window.pickIncScenario = function(id) {
+  S.inc.scenario = id; S.inc.customText = '';
+  $('scenario-section').innerHTML = renderScenarioOptions();
+  refreshIncStartBtn();
+};
+
+window.pickIncPersona = function(id) {
+  S.inc.persona = id;
+  PERSONA_LIST.forEach(p => {
+    const b = $(`incp-${p.id}`); if (!b) return;
+    b.className = `w-full text-left px-4 py-3 rounded-xl border transition-all ${S.inc.persona===p.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}`;
+    b.querySelector('div').className = `text-sm font-medium ${S.inc.persona===p.id ? 'text-indigo-300' : 'text-slate-300'}`;
+  });
+};
+
+function refreshIncStartBtn() {
+  const btn = $('inc-start-btn'); if (!btn) return;
+  const canStart = S.inc.domain && (S.inc.scenario || S.inc.customText.trim());
+  btn.disabled = !canStart;
+  btn.className = `w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${canStart ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`;
+  btn.textContent = canStart ? 'Review & Start →' : 'Select domain and scenario to continue';
+}
+
+window.showIncidentReview = function() {
+  const srcType = getIncidentSourceType();
+  const scenarioTitle = S.inc.scenario === 'custom'
+    ? (S.inc.customText.trim() || 'Random incident — PrepOps will generate one')
+    : S.inc.scenario?.startsWith('tpl_')
+    ? (TEMPLATE_DATA[S.inc.scenario.slice(4)]?.title + ' — generated') || 'Template scenario'
+    : INCIDENT_DATA[S.inc.scenario]?.title || 'Selected scenario';
+  const persona = PERSONA_DATA[S.inc.persona];
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-xl mx-auto flex items-center gap-4">
+          <button onclick="renderIncidentSetup()" class="text-slate-400 hover:text-white text-sm">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Incident Review</span>
+        </div>
+      </div>
+      <div class="flex-1 flex items-center justify-center px-6 py-16">
+        <div class="w-full max-w-xl">
+          <p class="text-slate-400 text-sm mb-6">Review your scenario before starting.</p>
+          <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden mb-6">
+            <div class="px-5 py-4 border-b border-slate-800 flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Scenario</div>
+                <div class="text-white font-semibold text-base">${esc(scenarioTitle)}</div>
+              </div>
+              ${sourceBadge(srcType)}
+            </div>
+            <div class="grid grid-cols-3 divide-x divide-slate-800">
+              <div class="px-4 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Domain</div>
+                <div class="text-white font-medium capitalize">${esc(S.inc.domain)}</div>
+              </div>
+              <div class="px-4 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Difficulty</div>
+                <div class="text-white font-medium">${esc(S.inc.diff)}</div>
+              </div>
+              <div class="px-4 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Persona</div>
+                <div class="text-white font-medium">${esc(persona.label)}</div>
+              </div>
+            </div>
+            <div class="px-5 py-3 bg-slate-950/50 border-t border-slate-800">
+              <p class="text-slate-500 text-xs">No hiring signal · Incident sessions generate a debrief report only</p>
+            </div>
+          </div>
+          <button onclick="beginIncident()" class="w-full py-3.5 bg-red-700 hover:bg-red-600 text-white rounded-xl font-semibold text-sm">🚨 Begin Incident →</button>
+          <button onclick="renderIncidentSetup()" class="w-full mt-3 py-2.5 text-slate-500 hover:text-slate-300 text-sm">← Change settings</button>
+        </div>
+      </div>
+    </div>`;
+};
+
+window.beginIncident = async function() {
+  renderIncidentShell();
+  setIncLoad(true);
+  try {
+    const res = await ask(buildIncidentInit());
+    S.inc.msgs.push({role:'assistant', content:res});
+    setIncLoad(false);
+    addIncBubble('assistant', res);
+  } catch(e) { setIncLoad(false); showIncErr(e.message); }
+};
+
+function renderIncidentShell() {
+  const srcType = getIncidentSourceType();
+  const persona  = PERSONA_DATA[S.inc.persona];
+  $('app').innerHTML = `
+    <div style="display:flex;flex-direction:column;height:100vh" class="bg-slate-950 text-slate-100">
+      <div class="flex-shrink-0 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <button onclick="showIncidentSetup()" class="text-slate-500 hover:text-white text-sm flex-shrink-0">←</button>
+          <span class="text-white text-sm font-medium truncate">Production Incident</span>
+        </div>
+        <button onclick="showIncidentDebrief()" class="flex-shrink-0 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg">Debrief →</button>
+      </div>
+      <div class="flex-shrink-0 border-b border-slate-800 px-4 py-2 flex items-center gap-3 flex-wrap text-xs text-slate-400">
+        ${sourceBadge(srcType)}
+        <span class="text-slate-700">·</span>
+        <span class="capitalize">${esc(S.inc.domain)}</span>
+        <span class="text-slate-700">·</span>
+        <span>${esc(persona.label)}</span>
+        <span class="text-slate-700">·</span>
+        <span id="turn-ct" class="text-slate-500">Turn 0</span>
+        <span class="ml-auto text-slate-600">No hiring signal</span>
+      </div>
+      <div id="inc-scroll" class="hs" style="flex:1;overflow-y:auto">
+        <div class="max-w-3xl mx-auto px-4 pt-4 pb-4">
+          <div id="inc-msg-list"></div>
+          <div id="inc-load" style="display:none" class="term text-sm text-slate-500 py-2">
+            <span class="text-green-500">$ </span><span class="animate-pulse">_</span>
+          </div>
+          <div id="inc-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl mb-4"></div>
+          <div id="inc-anchor"></div>
+        </div>
+      </div>
+      <div class="flex-shrink-0 border-t border-slate-800 px-4 py-3">
+        <div class="max-w-3xl mx-auto">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs text-slate-500 flex-shrink-0">Hypothesis:</span>
+            <input id="hyp-inp" type="text" value="${esc(S.inc.hypothesis)}"
+              placeholder="Your current theory about what's wrong…"
+              class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              oninput="S.inc.hypothesis=this.value" />
+          </div>
+          <div class="flex gap-3">
+            <textarea id="inc-inp" rows="2" placeholder="Run a command or describe your next investigation step… (Enter to send)"
+              class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 term text-sm text-green-200 placeholder-slate-600 focus:outline-none focus:border-green-700 focus:ring-1 focus:ring-green-900 resize-none"></textarea>
+            <button id="inc-send-btn" class="flex-shrink-0 bg-green-800 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 rounded-xl text-sm font-medium">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  $('inc-send-btn').addEventListener('click', sendIncidentMsg);
+  $('inc-inp').addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendIncidentMsg(); } });
+}
+
+function addIncBubble(role, content) {
+  const list = $('inc-msg-list'); if (!list) return;
+  const d = document.createElement('div');
+  d.innerHTML = incidentBubble(role, content);
+  list.appendChild(d);
+  const ct = $('turn-ct');
+  if (ct) ct.textContent = `Turn ${S.inc.turnCount}`;
+  $('inc-anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+function setIncLoad(on) {
+  const el = $('inc-load'); if (el) el.style.display = on ? 'block' : 'none';
+  const btn = $('inc-send-btn'), inp = $('inc-inp');
+  if (btn) btn.disabled = on;
+  if (inp) inp.disabled = on;
+}
+
+function showIncErr(msg) {
+  const el = $('inc-err'); if (!el) return;
+  el.style.display = 'block'; el.textContent = msg;
+  $('inc-anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+async function sendIncidentMsg() {
+  const inp = $('inc-inp'); if (!inp) return;
+  const txt = inp.value.trim(); if (!txt) return;
+  inp.value = '';
+  const errEl = $('inc-err'); if (errEl) errEl.style.display = 'none';
+  S.inc.turnCount++;
+  S.inc.msgs.push({role:'user', content:txt});
+  addIncBubble('user', txt);
+  setIncLoad(true);
+  try {
+    const res = await ask(buildIncidentTurn(txt));
+    S.inc.msgs.push({role:'assistant', content:res});
+    setIncLoad(false);
+    addIncBubble('assistant', res);
+  } catch(e) { S.inc.msgs.pop(); S.inc.turnCount--; setIncLoad(false); showIncErr(e.message); }
+}
+
+window.showIncidentDebrief = async function() {
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 class="text-white font-semibold text-sm">Incident Debrief</h1>
+            <p class="text-slate-500 text-xs mt-0.5 capitalize">${esc(S.inc.domain)} · ${esc(S.inc.diff)} · ${S.inc.turnCount} turn${S.inc.turnCount!==1?'s':''}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="showIncidentSetup()" class="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">New incident</button>
+            <button onclick="showHome()" class="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg">Home</button>
+          </div>
+        </div>
+      </div>
+      <div class="max-w-3xl mx-auto px-6 py-10">
+        <div id="deb-load" class="flex flex-col items-center gap-4 py-20">
+          <div class="flex gap-1"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <p class="text-slate-400 text-sm">Generating your incident debrief…</p>
+        </div>
+        <div id="deb-box" style="display:none" class="bg-slate-900 border border-slate-700 rounded-xl p-6">
+          <pre id="deb-txt" class="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap overflow-x-auto"></pre>
+        </div>
+        <div id="deb-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl"></div>
+        <div id="deb-foot" style="display:none" class="mt-8 flex justify-center gap-3">
+          <button onclick="showIncidentSetup()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium">Another incident →</button>
+          <button onclick="showHome()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-6 py-2.5 rounded-xl text-sm font-medium">Home</button>
+        </div>
+      </div>
+    </div>`;
+  try {
+    const res = await ask(buildIncidentDebrief());
+    $('deb-load').style.display = 'none';
+    $('deb-txt').textContent = res;
+    $('deb-box').style.display = 'block';
+    $('deb-foot').style.display = 'flex';
+  } catch(e) {
+    $('deb-load').style.display = 'none';
+    $('deb-err').style.display = 'block';
+    $('deb-err').textContent = e.message;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CODING VIEWS  (Stage 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+window.showCodingSetup = function() {
+  S.cod = { diff:'Senior', company:'general', source:'auto', customText:'', persona:'google_sre', msgs:[] };
+  renderCodingSetup();
+};
+
+function renderCodingSetup() {
+  const srcBtns = ['auto','custom'].map(s => `
+    <button onclick="pickCodSource('${s}')" id="cods-${s}"
+      class="flex-1 py-2.5 text-sm font-medium rounded-xl border transition-all ${S.cod.source===s ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'}">
+      ${s === 'auto' ? 'PrepOps picks a problem' : 'I\'ll describe the problem'}
+    </button>`).join('');
+
+  const companyBtns = CODING_COMPANIES.map(c => `
+    <button onclick="pickCodCompany('${c.id}')" id="codc-${c.id}"
+      class="px-3 py-2 text-sm font-medium rounded-lg border transition-all ${S.cod.company===c.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'}">
+      ${c.label}
+    </button>`).join('');
+
+  const diffBtns = CODING_DIFFS.map(d => `
+    <button onclick="pickCodDiff('${d}')" id="codd-${d.replace(/\s*\/\s*/g,'-')}"
+      class="px-4 py-2 text-sm font-medium rounded-lg border transition-all ${S.cod.diff===d ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'}">
+      ${d}
+    </button>`).join('');
+
+  const personaBtns = PERSONA_LIST.map(p => `
+    <button onclick="pickCodPersona('${p.id}')" id="codp-${p.id}"
+      class="w-full text-left px-4 py-3 rounded-xl border transition-all ${S.cod.persona===p.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}">
+      <div class="text-sm font-medium ${S.cod.persona===p.id ? 'text-indigo-300' : 'text-slate-300'}">${p.label}</div>
+      <div class="text-xs text-slate-500 mt-0.5">${p.sub}</div>
+    </button>`).join('');
+
+  const canStart = S.cod.source === 'auto' || S.cod.customText.trim().length > 10;
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-2xl mx-auto flex items-center gap-4">
+          <button onclick="showHome()" class="text-slate-400 hover:text-white text-sm">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Coding Reasoning</span>
+        </div>
+      </div>
+      <div class="max-w-2xl mx-auto px-6 py-10 space-y-10">
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Problem source</label>
+          <div class="flex gap-3">${srcBtns}</div>
+        </div>
+
+        <div id="cod-auto-opts" style="${S.cod.source==='auto'?'':'display:none'}">
+          <div class="space-y-8">
+            <div>
+              <label class="block text-sm font-medium text-slate-200 mb-3">Company <span class="text-slate-500 font-normal">(optional)</span></label>
+              <div class="flex gap-2 flex-wrap">${companyBtns}</div>
+              <p class="mt-2 text-xs text-slate-500">Shapes problem selection and pattern expectations.</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-200 mb-3">Difficulty</label>
+              <div class="flex gap-2 flex-wrap">${diffBtns}</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="cod-custom-opts" style="${S.cod.source==='custom'?'':'display:none'}">
+          <label class="block text-sm font-medium text-slate-200 mb-3">Describe the problem</label>
+          <textarea id="cod-custom-txt" rows="4"
+            placeholder="Paste the problem or describe it… (e.g. 'Given an array of integers, find two numbers that add up to a target sum')"
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+            oninput="S.cod.customText=this.value;refreshCodStartBtn()">${esc(S.cod.customText)}</textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Interviewer Persona</label>
+          <div class="space-y-2">${personaBtns}</div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-500">
+          ℹ️  Coding Reasoning trains approach, complexity, and communication — not code correctness.
+          For problem volume, use LeetCode. This mode prepares you to perform once you're in the room.
+        </div>
+
+        <button id="cod-start-btn" onclick="showCodingReview()"
+          class="w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${canStart ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}"
+          ${canStart ? '' : 'disabled'}>
+          ${canStart ? 'Review & Start →' : 'Describe the problem to continue'}
+        </button>
+
+      </div>
+    </div>`;
+}
+
+window.pickCodSource = function(s) {
+  S.cod.source = s;
+  const auto = $('cod-auto-opts'), cust = $('cod-custom-opts');
+  if (auto) auto.style.display = s === 'auto' ? '' : 'none';
+  if (cust) cust.style.display = s === 'custom' ? '' : 'none';
+  ['auto','custom'].forEach(v => {
+    const b = $(`cods-${v}`); if (!b) return;
+    b.className = `flex-1 py-2.5 text-sm font-medium rounded-xl border transition-all ${S.cod.source===v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'}`;
+  });
+  refreshCodStartBtn();
+};
+
+window.pickCodCompany = function(id) {
+  S.cod.company = id;
+  CODING_COMPANIES.forEach(c => {
+    const b = $(`codc-${c.id}`); if (!b) return;
+    b.className = `px-3 py-2 text-sm font-medium rounded-lg border transition-all ${S.cod.company===c.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'}`;
+  });
+};
+
+window.pickCodDiff = function(d) {
+  S.cod.diff = d;
+  CODING_DIFFS.forEach(v => {
+    const b = $(`codd-${v.replace(/\s*\/\s*/g,'-')}`); if (!b) return;
+    b.className = `px-4 py-2 text-sm font-medium rounded-lg border transition-all ${S.cod.diff===v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'}`;
+  });
+};
+
+window.pickCodPersona = function(id) {
+  S.cod.persona = id;
+  PERSONA_LIST.forEach(p => {
+    const b = $(`codp-${p.id}`); if (!b) return;
+    b.className = `w-full text-left px-4 py-3 rounded-xl border transition-all ${S.cod.persona===p.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}`;
+    b.querySelector('div').className = `text-sm font-medium ${S.cod.persona===p.id ? 'text-indigo-300' : 'text-slate-300'}`;
+  });
+};
+
+function refreshCodStartBtn() {
+  const btn = $('cod-start-btn'); if (!btn) return;
+  const canStart = S.cod.source === 'auto' || S.cod.customText.trim().length > 10;
+  btn.disabled = !canStart;
+  btn.className = `w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${canStart ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`;
+  btn.textContent = canStart ? 'Review & Start →' : 'Describe the problem to continue';
+}
+
+window.showCodingReview = function() {
+  const persona   = PERSONA_DATA[S.cod.persona];
+  const srcLabel  = S.cod.source === 'auto' ? 'PrepOps picks a problem' : 'Custom problem';
+  const problemSummary = S.cod.source === 'custom'
+    ? (S.cod.customText.slice(0,120) + (S.cod.customText.length > 120 ? '…' : ''))
+    : `${S.cod.company !== 'general' ? CODING_COMPANIES.find(c=>c.id===S.cod.company)?.label+' · ' : ''}${S.cod.diff}`;
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-xl mx-auto flex items-center gap-4">
+          <button onclick="renderCodingSetup()" class="text-slate-400 hover:text-white text-sm">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Coding Review</span>
+        </div>
+      </div>
+      <div class="flex-1 flex items-center justify-center px-6 py-16">
+        <div class="w-full max-w-xl">
+          <p class="text-slate-400 text-sm mb-6">Review your session before starting.</p>
+          <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden mb-6">
+            <div class="px-5 py-4 border-b border-slate-800">
+              <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">${esc(srcLabel)}</div>
+              <div class="text-white font-semibold text-base">${esc(problemSummary)}</div>
+            </div>
+            <div class="grid grid-cols-2 divide-x divide-slate-800">
+              <div class="px-5 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Difficulty</div>
+                <div class="text-white font-medium">${esc(S.cod.diff)}</div>
+              </div>
+              <div class="px-5 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Persona</div>
+                <div class="text-white font-medium">${esc(persona.label)}</div>
+              </div>
+            </div>
+            <div class="px-5 py-3 bg-slate-950/50 border-t border-slate-800">
+              <p class="text-slate-500 text-xs">Trains approach, complexity, and communication · No code execution · Optimal reveal at the end</p>
+            </div>
+          </div>
+          <button onclick="beginCoding()" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-sm">Begin Session →</button>
+          <button onclick="renderCodingSetup()" class="w-full mt-3 py-2.5 text-slate-500 hover:text-slate-300 text-sm">← Change settings</button>
+        </div>
+      </div>
+    </div>`;
+};
+
+window.beginCoding = async function() {
+  renderCodingShell();
+  setCodLoad(true);
+  try {
+    const res = await ask(buildCodingInit());
+    S.cod.msgs.push({role:'assistant', content:res});
+    setCodLoad(false);
+    addCodBubble('assistant', res);
+  } catch(e) { setCodLoad(false); showCodErr(e.message); }
+};
+
+function renderCodingShell() {
+  const persona = PERSONA_DATA[S.cod.persona];
+  $('app').innerHTML = `
+    <div style="display:flex;flex-direction:column;height:100vh" class="bg-slate-950 text-slate-100">
+      <div class="flex-shrink-0 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <button onclick="showCodingSetup()" class="text-slate-500 hover:text-white text-sm flex-shrink-0">←</button>
+          <span class="text-white text-sm font-medium truncate">Coding Reasoning</span>
+        </div>
+        <button onclick="showCodingReveal()" class="flex-shrink-0 text-xs bg-indigo-800 hover:bg-indigo-700 border border-indigo-700 text-indigo-200 px-3 py-1.5 rounded-lg">End & Get Reveal →</button>
+      </div>
+      <div class="flex-shrink-0 border-b border-slate-800 px-4 py-2">
+        <div class="flex items-center gap-3 flex-wrap text-xs text-slate-400 mb-2">
+          <span class="capitalize">${esc(S.cod.company)}</span>
+          <span class="text-slate-700">·</span>
+          <span>${esc(S.cod.diff)}</span>
+          <span class="text-slate-700">·</span>
+          <span>${esc(persona.label)}</span>
+        </div>
+        <div class="flex gap-2" id="phase-track">
+          ${CODING_PHASES.map((p,i) => `<span class="text-xs px-2.5 py-1 rounded-full whitespace-nowrap ${i===0?'bg-indigo-600 text-white':'bg-slate-800 text-slate-500'}" id="phase-${i}">${i===0?'▸ ':''}${p}</span>`).join('')}
+        </div>
+      </div>
+      <div id="cod-scroll" class="hs" style="flex:1;overflow-y:auto">
+        <div class="max-w-3xl mx-auto px-4 pt-4 pb-6">
+          <div id="cod-msg-list"></div>
+          <div id="cod-load" style="display:none" class="flex items-center gap-2 px-4 py-3 text-slate-400 text-sm">
+            <div class="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">P</div>
+            <span>PrepOps is thinking</span>
+            <span class="flex gap-0.5 ml-0.5"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+          </div>
+          <div id="cod-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl mb-4"></div>
+          <div id="cod-anchor"></div>
+        </div>
+      </div>
+      <div class="flex-shrink-0 border-t border-slate-800 px-4 py-4">
+        <div class="max-w-3xl mx-auto flex gap-3">
+          <textarea id="cod-inp" rows="2" placeholder="Your response… (Enter to send, Shift+Enter for newline)"
+            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none"></textarea>
+          <button id="cod-send-btn" class="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 rounded-xl text-sm font-medium">Send</button>
+        </div>
+      </div>
+    </div>`;
+  $('cod-send-btn').addEventListener('click', sendCodingMsg);
+  $('cod-inp').addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendCodingMsg(); } });
+}
+
+function updateCodPhase() {
+  const phase = getCodingPhase();
+  CODING_PHASES.forEach((_, i) => {
+    const el = $(`phase-${i}`); if (!el) return;
+    const active = i === phase, done = i < phase;
+    el.className = `text-xs px-2.5 py-1 rounded-full whitespace-nowrap ${active ? 'bg-indigo-600 text-white' : done ? 'bg-slate-700 text-slate-400' : 'bg-slate-800 text-slate-500'}`;
+    el.textContent = (active ? '▸ ' : done ? '✓ ' : '') + CODING_PHASES[i];
+  });
+}
+
+function addCodBubble(role, content) {
+  const list = $('cod-msg-list'); if (!list) return;
+  const d = document.createElement('div');
+  d.innerHTML = conceptBubble(role, content);
+  list.appendChild(d);
+  updateCodPhase();
+  $('cod-anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+function setCodLoad(on) {
+  const el = $('cod-load'); if (el) el.style.display = on ? 'flex' : 'none';
+  const btn = $('cod-send-btn'), inp = $('cod-inp');
+  if (btn) btn.disabled = on;
+  if (inp) inp.disabled = on;
+}
+
+function showCodErr(msg) {
+  const el = $('cod-err'); if (!el) return;
+  el.style.display = 'block'; el.textContent = msg;
+  $('cod-anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+async function sendCodingMsg() {
+  const inp = $('cod-inp'); if (!inp) return;
+  const txt = inp.value.trim(); if (!txt) return;
+  inp.value = '';
+  const errEl = $('cod-err'); if (errEl) errEl.style.display = 'none';
+  S.cod.msgs.push({role:'user', content:txt});
+  addCodBubble('user', txt);
+  setCodLoad(true);
+  try {
+    const res = await ask(buildCodingTurn(txt));
+    S.cod.msgs.push({role:'assistant', content:res});
+    setCodLoad(false);
+    addCodBubble('assistant', res);
+  } catch(e) { S.cod.msgs.pop(); setCodLoad(false); showCodErr(e.message); }
+}
+
+window.showCodingReveal = async function() {
+  const persona = PERSONA_DATA[S.cod.persona];
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 class="text-white font-semibold text-sm">Optimal Approach Reveal</h1>
+            <p class="text-slate-500 text-xs mt-0.5">${esc(S.cod.diff)} · ${esc(persona.label)} · ${S.cod.msgs.filter(m=>m.role==='user').length} exchange${S.cod.msgs.filter(m=>m.role==='user').length!==1?'s':''}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="showCodingSetup()" class="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">New problem</button>
+            <button onclick="showHome()" class="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg">Home</button>
+          </div>
+        </div>
+      </div>
+      <div class="max-w-3xl mx-auto px-6 py-10">
+        <div id="rev-load" class="flex flex-col items-center gap-4 py-20">
+          <div class="flex gap-1"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <p class="text-slate-400 text-sm">Generating the optimal approach reveal…</p>
+        </div>
+        <div id="rev-box" style="display:none" class="bg-slate-900 border border-slate-700 rounded-xl p-6">
+          <pre id="rev-txt" class="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap overflow-x-auto"></pre>
+        </div>
+        <div id="rev-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl"></div>
+        <div id="rev-foot" style="display:none" class="mt-8 flex justify-center gap-3">
+          <button onclick="showCodingSetup()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium">Try another problem →</button>
+          <button onclick="showHome()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-6 py-2.5 rounded-xl text-sm font-medium">Home</button>
+        </div>
+      </div>
+    </div>`;
+  try {
+    const res = await ask(buildCodingReveal());
+    $('rev-load').style.display = 'none';
+    $('rev-txt').textContent = res;
+    $('rev-box').style.display = 'block';
+    $('rev-foot').style.display = 'flex';
+  } catch(e) {
+    $('rev-load').style.display = 'none';
+    $('rev-err').style.display = 'block';
+    $('rev-err').textContent = e.message;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROLE PREP  (Stage 3)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+window.showRolePrepSetup = function() {
+  S.jd = {
+    jdText:'', resumeText:'', timeline:'', knownDetails:'', researchBrief:'',
+    blueprint:null, persona:'google_sre', topDomain:'kubernetes', level:'Senior',
+    roleTitle:'', company:'', activeMode:null, msgs:[],
+  };
+  renderRolePrepSetup();
+};
+
+function renderRolePrepSetup() {
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-2xl mx-auto flex items-center gap-4">
+          <button onclick="showHome()" class="text-slate-400 hover:text-white text-sm">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Prepare for a Role</span>
+        </div>
+      </div>
+      <div class="max-w-2xl mx-auto px-6 py-10 space-y-8">
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-1">Job description <span class="text-red-400">*</span></label>
+          <p class="text-xs text-slate-500 mb-3">Paste the full JD — PrepOps extracts role, level, required skills, and tech stack.</p>
+          <textarea id="jd-text" rows="8"
+            placeholder="Paste the full job description here…"
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+            oninput="S.jd.jdText=this.value;refreshJDStartBtn()">${esc(S.jd.jdText)}</textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-1">Resume or professional background <span class="text-slate-500 font-normal">(optional)</span></label>
+          <p class="text-xs text-slate-500 mb-3">PrepOps will identify which required skills you've evidenced and which need practice. Not scored — used only for session prioritization.</p>
+          <textarea id="jd-resume" rows="5"
+            placeholder="Paste resume text, LinkedIn summary, or a brief description of your background…"
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+            oninput="S.jd.resumeText=this.value">${esc(S.jd.resumeText)}</textarea>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div>
+            <label class="block text-sm font-medium text-slate-200 mb-1">Interview timeline <span class="text-slate-500 font-normal">(optional)</span></label>
+            <input id="jd-timeline" type="text" value="${esc(S.jd.timeline)}"
+              placeholder="e.g. 2 weeks, next Friday, 3 days"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              oninput="S.jd.timeline=this.value" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-200 mb-1">Known interview details <span class="text-slate-500 font-normal">(optional)</span></label>
+            <input id="jd-known" type="text" value="${esc(S.jd.knownDetails)}"
+              placeholder="e.g. 4 rounds, system design, take-home"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              oninput="S.jd.knownDetails=this.value" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-1">Current interview research <span class="text-slate-500 font-normal">(optional)</span></label>
+          <p class="text-xs text-slate-500 mb-3">Paste notes from Claude web research, recruiter guidance, or public interview reports. PrepOps will apply source-confidence rules to your notes.<br>
+          <span class="text-slate-600">No research? PrepOps will use model knowledge only — company interview details may not be current.</span></p>
+          <textarea id="jd-research" rows="4"
+            placeholder="Paste research notes here — Glassdoor reviews, recruiter tips, engineering blog posts…"
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+            oninput="S.jd.researchBrief=this.value">${esc(S.jd.researchBrief)}</textarea>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-500">
+          ℹ️  PrepOps generates a runtime blueprint from your JD — it is never saved. Resume text is read-only context; PrepOps will not score, rewrite, or give formatting advice on it.
+        </div>
+
+        <button id="jd-start-btn" onclick="generatePrepPlan()"
+          class="w-full py-3.5 rounded-xl font-semibold text-sm transition-all bg-slate-800 text-slate-600 cursor-not-allowed"
+          disabled>
+          Paste a job description to continue
+        </button>
+
+      </div>
+    </div>`;
+}
+
+window.refreshJDStartBtn = function refreshJDStartBtn() {
+  const btn = $('jd-start-btn'); if (!btn) return;
+  const ok = S.jd.jdText.trim().length > 80;
+  btn.disabled = !ok;
+  btn.className = `w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${ok ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`;
+  btn.textContent = ok ? 'Generate Prep Plan →' : 'Paste a job description to continue';
+}
+
+function buildJDPlan() {
+  const hasResearch = S.jd.researchBrief.trim().length > 0;
+  const researchSection = hasResearch
+    ? `Research notes provided by user (apply source-confidence rules to each claim):\n${S.jd.researchBrief}`
+    : `Research status: Model knowledge only\nLive web research is unavailable inside Claude.ai artifacts. Apply ★★★☆☆ (model knowledge) to all company-specific claims not present in the JD itself.`;
+
+  const resumeSection = S.jd.resumeText.trim()
+    ? `=== RESUME / BACKGROUND (set has_resume: true) ===\n${S.jd.resumeText}`
+    : `No resume provided — set has_resume: false. Skip the YOUR GAPS section.`;
+
+  const extras = [
+    S.jd.timeline.trim()    ? `Interview timeline: ${S.jd.timeline}`       : '',
+    S.jd.knownDetails.trim()? `Known interview details: ${S.jd.knownDetails}` : '',
+  ].filter(Boolean).join('\n');
+
+  return `${CORE}
+
+=== JD PARSER INSTRUCTIONS ===
+${JD_PARSER_PROMPT}
+
+=== ARTIFACT CONTEXT ===
+You are running inside a Claude.ai artifact. Follow the source-confidence rules in Step 2 above.
+Do NOT claim web searches were performed. Do NOT pretend current research happened.
+
+=== JOB DESCRIPTION ===
+${S.jd.jdText}
+
+${resumeSection}
+${extras ? `\n=== ADDITIONAL CONTEXT ===\n${extras}` : ''}
+
+=== RESEARCH ===
+${researchSection}
+
+Follow all steps from the JD Parser instructions above (Steps 0–4).
+Skip live searches — use the artifact context rules for Step 2 instead.
+Output the full prep plan in the Step 4 format.
+
+After the prep plan, on a new line output a machine-readable block EXACTLY like this (fill in the values):
+<<<BLUEPRINT_META
+preferred_persona: google_sre
+top_domain: kubernetes
+level: Senior
+role_title: Site Reliability Engineer
+company: Example Corp
+evaluation_focus: production_thinking,debugging_methodology
+>>>`;
+}
+
+function parseBlueprintMeta(text) {
+  const match = text.match(/<<<BLUEPRINT_META\n([\s\S]*?)>>>/);
+  if (!match) return {};
+  const block = match[1];
+  const get = (key) => { const m = block.match(new RegExp(`^${key}:\\s*(.+)$`, 'm')); return m ? m[1].trim() : ''; };
+  return {
+    persona:    get('preferred_persona') || 'google_sre',
+    topDomain:  get('top_domain')        || 'kubernetes',
+    level:      get('level')             || 'Senior',
+    roleTitle:  get('role_title')        || '',
+    company:    get('company')           || '',
+    evalFocus:  get('evaluation_focus')  || '',
+  };
+}
+
+window.generatePrepPlan = async function() {
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-6 px-6">
+      <div class="flex gap-1"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <p class="text-slate-400 text-sm text-center">Analysing job description and building your prep plan…<br>
+      <span class="text-slate-600 text-xs">This may take 15–30 seconds</span></p>
+    </div>`;
+  try {
+    const raw = await ask(buildJDPlan());
+    const meta = parseBlueprintMeta(raw);
+    const planText = raw.replace(/<<<BLUEPRINT_META[\s\S]*?>>>/,'').trim();
+    S.jd.blueprint  = planText;
+    S.jd.persona    = meta.persona    || 'google_sre';
+    S.jd.topDomain  = meta.topDomain  || 'kubernetes';
+    S.jd.level      = meta.level      || 'Senior';
+    S.jd.roleTitle  = meta.roleTitle  || '';
+    S.jd.company    = meta.company    || '';
+    showPrepPlan();
+  } catch(e) {
+    $('app').innerHTML = `
+      <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-4 px-6">
+        <div class="bg-red-950 border border-red-800 text-red-300 text-sm px-5 py-4 rounded-xl max-w-md text-center">${esc(e.message)}</div>
+        <button onclick="renderRolePrepSetup()" class="text-slate-400 hover:text-white text-sm">← Back to setup</button>
+      </div>`;
+  }
+};
+
+function showPrepPlan() {
+  const persona = PERSONA_DATA[S.jd.persona] || PERSONA_DATA['google_sre'];
+  const domainData = INCIDENT_DOMAINS.find(d => d.id === S.jd.topDomain) || INCIDENT_DOMAINS[0];
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <button onclick="renderRolePrepSetup()" class="text-slate-400 hover:text-white text-sm">← Edit inputs</button>
+            <div class="w-px h-4 bg-slate-700"></div>
+            <span class="text-white font-semibold text-sm">Prep Plan${S.jd.roleTitle ? ' · ' + esc(S.jd.roleTitle) : ''}${S.jd.company ? ' · ' + esc(S.jd.company) : ''}</span>
+          </div>
+          <button onclick="showHome()" class="text-sm text-slate-500 hover:text-slate-300">Home</button>
+        </div>
+      </div>
+
+      <div class="max-w-3xl mx-auto px-6 py-10 space-y-10">
+
+        <!-- Prep plan output -->
+        <div class="bg-slate-900 border border-slate-700 rounded-xl p-6">
+          <pre class="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap overflow-x-auto">${esc(S.jd.blueprint)}</pre>
+        </div>
+
+        <!-- Action buttons -->
+        <div>
+          <h2 class="text-white font-semibold text-sm mb-1">Start a session</h2>
+          <p class="text-slate-500 text-xs mb-5">Each session carries your JD context — topic weights, evaluation focus, and persona are set by the prep plan.</p>
+
+          <div class="space-y-3">
+
+            <button onclick="launchJDTopPriority()"
+              class="w-full text-left px-5 py-4 rounded-xl border bg-indigo-950 border-indigo-700 hover:border-indigo-500 transition-all">
+              <div class="text-sm font-semibold text-indigo-200">Start Top Priority</div>
+              <div class="text-xs text-indigo-400 mt-0.5">Concept Prep · ${esc(S.jd.level)} · ${esc(domainData.label)} domain</div>
+            </button>
+
+            <button onclick="launchJDMockInterview()"
+              class="w-full text-left px-5 py-4 rounded-xl border bg-slate-900 border-slate-700 hover:border-indigo-500 transition-all">
+              <div class="text-sm font-semibold text-white">Start Mock Interview</div>
+              <div class="text-xs text-slate-400 mt-0.5">Persona: ${esc(persona.label)} · ${esc(S.jd.level)} · JD topics</div>
+            </button>
+
+            <button onclick="launchJDProductionScenario()"
+              class="w-full text-left px-5 py-4 rounded-xl border bg-slate-900 border-slate-700 hover:border-indigo-500 transition-all">
+              <div class="text-sm font-semibold text-white">Start Production Scenario</div>
+              <div class="text-xs text-slate-400 mt-0.5">Domain: ${esc(domainData.label)} · ${esc(S.jd.level)} · Persona: ${esc(persona.label)}</div>
+            </button>
+
+            <button onclick="launchJDCodingReasoning()"
+              class="w-full text-left px-5 py-4 rounded-xl border bg-slate-900 border-slate-700 hover:border-indigo-500 transition-all">
+              <div class="text-sm font-semibold text-white">Start Coding Reasoning</div>
+              <div class="text-xs text-slate-400 mt-0.5">Difficulty: ${esc(S.jd.level)} · Persona: ${esc(persona.label)}</div>
+            </button>
+
+            <button onclick="launchJDChooseTopic()"
+              class="w-full text-left px-5 py-4 rounded-xl border bg-slate-900 border-slate-700 hover:border-slate-600 transition-all">
+              <div class="text-sm font-semibold text-slate-300">Choose Another Topic</div>
+              <div class="text-xs text-slate-500 mt-0.5">Pick any topic from the curriculum — JD context is still applied</div>
+            </button>
+
+          </div>
+        </div>
+
+      </div>
+    </div>`;
+}
+
+// ─── JD session launchers ────────────────────────────────────────────────────
+
+window.launchJDTopPriority = function() {
+  const domainData = INCIDENT_DOMAINS.find(d => d.id === S.jd.topDomain) || INCIDENT_DOMAINS[0];
+  S.topic = { slug: S.jd.topDomain, display: domainData.label, domain: domainData.label, coverage: 'full' };
+  S.diff  = S.jd.level === 'Staff' ? 'Staff' : S.jd.level || 'Senior';
+  S.mode  = 'learn';
+  S.msgs  = [];
+  renderConceptShell();
+  setConceptLoad(true);
+  ask(buildInit()).then(res => {
+    S.msgs.push({role:'assistant', content:res});
+    setConceptLoad(false);
+    addConceptBubble('assistant', res);
+  }).catch(e => { setConceptLoad(false); showConceptErr(e.message); });
+};
+
+window.launchJDChooseTopic = function() {
+  S.diff = S.jd.level || 'Senior';
+  showSetup();
+};
+
+window.launchJDProductionScenario = function() {
+  const domainId = INCIDENT_DOMAINS.find(d => d.id === S.jd.topDomain) ? S.jd.topDomain : INCIDENT_DOMAINS[0].id;
+  S.inc = {
+    domain: domainId,
+    diff: S.jd.level || 'Senior',
+    scenario: null,
+    persona: S.jd.persona || 'google_sre',
+    customText: '',
+    msgs: [], turnCount: 0, hypothesis: '',
+  };
+  renderIncidentSetup();
+};
+
+window.launchJDCodingReasoning = function() {
+  const companyId = S.jd.company
+    ? (CODING_COMPANIES.find(c => S.jd.company.toLowerCase().includes(c.id))?.id || 'general')
+    : 'general';
+  S.cod = {
+    diff: S.jd.level || 'Senior',
+    company: companyId,
+    source: 'auto',
+    customText: '',
+    persona: S.jd.persona || 'google_sre',
+    msgs: [],
+  };
+  renderCodingSetup();
+};
+
+// ─── Mock Interview (JD-driven, uses concept shell) ─────────────────────────
+
+function buildJDMockInit() {
+  const p = PERSONA_DATA[S.jd.persona] || PERSONA_DATA['google_sre'];
+  const domainData = INCIDENT_DOMAINS.find(d => d.id === S.jd.topDomain) || INCIDENT_DOMAINS[0];
+  return `${CORE}${jdContextBlock()}
+
+=== MOCK INTERVIEW MODE ===
+${MOCK_PROMPT}
+
+=== PERSONA ===
+${p.yaml}
+
+=== SESSION CONFIG ===
+Candidate level: ${S.jd.level}
+Domain focus: ${domainData.label}
+${S.jd.roleTitle ? `Target role: ${S.jd.roleTitle} at ${S.jd.company}` : ''}
+
+The blueprint above sets the topic weights and evaluation focus. Use it to select questions that match the JD requirements. After Phase 5, generate the standard report plus the JD READINESS section from the JD Parser instructions.
+
+Open with Phase 1 now — just the warm-up question, in character.`;
+}
+
+function buildJDMockTurn(userMsg) {
+  const p = PERSONA_DATA[S.jd.persona] || PERSONA_DATA['google_sre'];
+  const h = S.jd.msgs.map(m => `${m.role==='user'?'Candidate':'Interviewer'}: ${m.content}`).join('\n\n');
+  return `${CORE}${jdContextBlock()}
+
+=== MOCK INTERVIEW MODE ===
+${MOCK_PROMPT}
+
+=== PERSONA ===
+${p.yaml}
+
+=== CONVERSATION ===
+${h}
+
+Candidate: ${userMsg}
+
+Interviewer (continue the mock interview — follow phase structure, maintain persona, do not reveal correct answers or coach):`;
+}
+
+function buildJDMockReport() {
+  const h = S.jd.msgs.map(m => `${m.role==='user'?'Candidate':'Interviewer'}: ${m.content}`).join('\n\n');
+  const ex = S.jd.msgs.filter(m => m.role==='user').length;
+  const p = PERSONA_DATA[S.jd.persona] || PERSONA_DATA['google_sre'];
+  return `Generate the PrepOps mock interview report.
+
+Persona: ${p.name} | Level: ${S.jd.level} | Exchanges: ${ex}
+${S.jd.roleTitle ? `Role: ${S.jd.roleTitle} at ${S.jd.company}` : ''}
+
+Transcript:
+${h}
+
+${S.jd.blueprint ? `Blueprint context:\n${S.jd.blueprint}\n\n` : ''}Generate:
+1. The standard HIRE SIGNAL and DIMENSION SCORES report
+2. INTERVIEW VERDICT section (from MOCK_PROMPT)
+3. JD REQUIREMENTS DEMONSTRATED section: ✓ demonstrated / ✗ not tested
+4. STILL NEEDS PRACTICE: one topic + mode per gap
+5. ONE NEXT ACTION: exactly one recommendation
+
+Do not claim the user will pass the interview.`;
+}
+
+function renderJDMockShell() {
+  const p = PERSONA_DATA[S.jd.persona] || PERSONA_DATA['google_sre'];
+  $('app').innerHTML = `
+    <div style="display:flex;flex-direction:column;height:100vh" class="bg-slate-950 text-slate-100">
+      <div class="flex-shrink-0 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <button onclick="showPrepPlan()" class="text-slate-500 hover:text-white text-sm flex-shrink-0">←</button>
+          <span class="text-white text-sm font-medium truncate">Mock Interview</span>
+        </div>
+        <button onclick="showJDMockReport()" class="flex-shrink-0 text-xs bg-indigo-800 hover:bg-indigo-700 border border-indigo-700 text-indigo-200 px-3 py-1.5 rounded-lg">End & Get Report →</button>
+      </div>
+      <div class="flex-shrink-0 border-b border-slate-800 px-4 py-2 flex items-center gap-3 flex-wrap text-xs text-slate-400">
+        <span>${esc(p.label)}</span>
+        <span class="text-slate-700">·</span>
+        <span>${esc(S.jd.level)}</span>
+        ${S.jd.roleTitle ? `<span class="text-slate-700">·</span><span class="text-slate-500 truncate">${esc(S.jd.roleTitle)}${S.jd.company ? ' · ' + esc(S.jd.company) : ''}</span>` : ''}
+        <span class="ml-auto text-slate-600">JD-driven session</span>
+      </div>
+      <div id="jdm-scroll" class="hs" style="flex:1;overflow-y:auto">
+        <div class="max-w-3xl mx-auto px-4 pt-4 pb-6">
+          <div id="jdm-msg-list"></div>
+          <div id="jdm-load" style="display:none" class="flex items-center gap-2 px-4 py-3 text-slate-400 text-sm">
+            <div class="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">P</div>
+            <span>Interviewer is thinking</span>
+            <span class="flex gap-0.5 ml-0.5"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+          </div>
+          <div id="jdm-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl mb-4"></div>
+          <div id="jdm-anchor"></div>
+        </div>
+      </div>
+      <div class="flex-shrink-0 border-t border-slate-800 px-4 py-4">
+        <div class="max-w-3xl mx-auto flex gap-3">
+          <textarea id="jdm-inp" rows="2" placeholder="Your answer… (Enter to send, Shift+Enter for newline)"
+            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none"></textarea>
+          <button id="jdm-send-btn" class="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 rounded-xl text-sm font-medium">Send</button>
+        </div>
+      </div>
+    </div>`;
+  $('jdm-send-btn').addEventListener('click', sendJDMockMsg);
+  $('jdm-inp').addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendJDMockMsg(); } });
+}
+
+function addJDMockBubble(role, content) {
+  const list = $('jdm-msg-list'); if (!list) return;
+  const d = document.createElement('div');
+  d.innerHTML = conceptBubble(role, content);
+  list.appendChild(d);
+  $('jdm-anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+function setJDMockLoad(on) {
+  const el = $('jdm-load'); if (el) el.style.display = on ? 'flex' : 'none';
+  const btn = $('jdm-send-btn'), inp = $('jdm-inp');
+  if (btn) btn.disabled = on;
+  if (inp) inp.disabled = on;
+}
+
+async function sendJDMockMsg() {
+  const inp = $('jdm-inp'); if (!inp) return;
+  const txt = inp.value.trim(); if (!txt) return;
+  inp.value = '';
+  const errEl = $('jdm-err'); if (errEl) errEl.style.display = 'none';
+  S.jd.msgs.push({role:'user', content:txt});
+  addJDMockBubble('user', txt);
+  setJDMockLoad(true);
+  try {
+    const res = await ask(buildJDMockTurn(txt));
+    S.jd.msgs.push({role:'assistant', content:res});
+    setJDMockLoad(false);
+    addJDMockBubble('assistant', res);
+  } catch(e) { S.jd.msgs.pop(); setJDMockLoad(false); const el=$('jdm-err'); if(el){el.style.display='block';el.textContent=e.message;} $('jdm-anchor')?.scrollIntoView({behavior:'smooth'}); }
+}
+
+window.launchJDMockInterview = async function() {
+  S.jd.msgs = [];
+  renderJDMockShell();
+  setJDMockLoad(true);
+  try {
+    const res = await ask(buildJDMockInit());
+    S.jd.msgs.push({role:'assistant', content:res});
+    setJDMockLoad(false);
+    addJDMockBubble('assistant', res);
+  } catch(e) { setJDMockLoad(false); const el=$('jdm-err'); if(el){el.style.display='block';el.textContent=e.message;} }
+};
+
+window.showJDMockReport = async function() {
+  const ex = S.jd.msgs.filter(m=>m.role==='user').length;
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 class="text-white font-semibold text-sm">Mock Interview Report</h1>
+            <p class="text-slate-500 text-xs mt-0.5">${S.jd.roleTitle ? esc(S.jd.roleTitle)+' · ' : ''}${esc(S.jd.level)} · ${ex} exchange${ex!==1?'s':''}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="showPrepPlan()" class="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">Back to plan</button>
+            <button onclick="showHome()" class="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg">Home</button>
+          </div>
+        </div>
+      </div>
+      <div class="max-w-3xl mx-auto px-6 py-10">
+        <div id="jdmr-load" class="flex flex-col items-center gap-4 py-20">
+          <div class="flex gap-1"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <p class="text-slate-400 text-sm">Generating your session report…</p>
+        </div>
+        <div id="jdmr-box" style="display:none" class="bg-slate-900 border border-slate-700 rounded-xl p-6">
+          <pre id="jdmr-txt" class="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap overflow-x-auto"></pre>
+        </div>
+        <div id="jdmr-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl"></div>
+        <div id="jdmr-foot" style="display:none" class="mt-8 flex justify-center gap-3">
+          <button onclick="showPrepPlan()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium">Back to plan →</button>
+          <button onclick="showHome()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-6 py-2.5 rounded-xl text-sm font-medium">Home</button>
+        </div>
+      </div>
+    </div>`;
+  try {
+    const res = await ask(buildJDMockReport());
+    $('jdmr-load').style.display = 'none';
+    $('jdmr-txt').textContent = res;
+    $('jdmr-box').style.display = 'block';
+    $('jdmr-foot').style.display = 'flex';
+  } catch(e) {
+    $('jdmr-load').style.display = 'none';
+    $('jdmr-err').style.display = 'block';
+    $('jdmr-err').textContent = e.message;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════════════════════════
+showHome();
+</script>
+</body>
+</html>
