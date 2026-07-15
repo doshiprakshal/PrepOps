@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PrepOps</title>
+  <script>
+    window.__ow = console.warn.bind(console);
+    console.warn = (...a) => { if (typeof a[0]==='string' && a[0].includes('cdn.tailwindcss')) return; window.__ow(...a); };
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>console.warn = window.__ow; delete window.__ow;</script>
+  <style>
+    body { background:#020617; margin:0; }
+    .hs  { -ms-overflow-style:none; scrollbar-width:none; }
+    .hs::-webkit-scrollbar { display:none; }
+    @keyframes bd { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-5px)} }
+    .dot { display:inline-block;width:6px;height:6px;background:#818cf8;border-radius:50%;
+           animation:bd 1.2s infinite ease-in-out; }
+    .dot:nth-child(2){animation-delay:.2s}
+    .dot:nth-child(3){animation-delay:.4s}
+    textarea { font-family:inherit; }
+    pre { font-family:ui-monospace,monospace; }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────────
+const TOPICS = [
+  {slug:'kubernetes',           display:'Kubernetes — Pods & Workloads',       domain:'Kubernetes',    coverage:'full'},
+  {slug:'kubernetes_networking',display:'Kubernetes — Networking & CNI',        domain:'Kubernetes',    coverage:'full'},
+  {slug:'kubernetes_services',  display:'Kubernetes — Services & DNS',          domain:'Kubernetes',    coverage:'full'},
+  {slug:'helm',                 display:'Helm',                                 domain:'Kubernetes',    coverage:'none'},
+  {slug:'linux',                display:'Linux — Processes & Systemd',          domain:'Linux',         coverage:'full'},
+  {slug:'linux_performance',    display:'Linux — Performance & Profiling',      domain:'Linux',         coverage:'full'},
+  {slug:'linux_filesystems',    display:'Linux — Filesystems & Storage',        domain:'Linux',         coverage:'full'},
+  {slug:'terraform',            display:'Terraform — State & Backends',         domain:'Terraform',     coverage:'full'},
+  {slug:'terraform_modules',    display:'Terraform — Modules & Reuse',          domain:'Terraform',     coverage:'full'},
+  {slug:'terraform_drift',      display:'Terraform — Drift & Import',           domain:'Terraform',     coverage:'full'},
+  {slug:'aws_iam',              display:'AWS — IAM & Permissions',              domain:'AWS',           coverage:'full'},
+  {slug:'aws_autoscaling',      display:'AWS — Auto Scaling',                   domain:'AWS',           coverage:'full'},
+  {slug:'aws_load_balancing',   display:'AWS — Load Balancing',                 domain:'AWS',           coverage:'full'},
+  {slug:'networking_dns',       display:'Networking — DNS',                     domain:'Networking',    coverage:'full'},
+  {slug:'networking_tcp',       display:'Networking — TCP & Tuning',            domain:'Networking',    coverage:'full'},
+  {slug:'networking_lb',        display:'Networking — Load Balancing',          domain:'Networking',    coverage:'full'},
+  {slug:'sre_slos',             display:'SRE — SLOs & Error Budgets',           domain:'SRE',           coverage:'full'},
+  {slug:'sre_incident',         display:'SRE — Incident Response',              domain:'SRE',           coverage:'full'},
+  {slug:'sre_reliability',      display:'SRE — Reliability Patterns',           domain:'SRE',           coverage:'full'},
+  {slug:'docker',               display:'Docker & Containers',                  domain:'Containers',    coverage:'none'},
+  {slug:'gcp',                  display:'Google Cloud Platform',                domain:'Cloud',         coverage:'none'},
+  {slug:'prometheus',           display:'Prometheus & Alerting',                domain:'Observability', coverage:'none'},
+  {slug:'grafana',              display:'Grafana',                              domain:'Observability', coverage:'none'},
+  {slug:'cicd',                 display:'CI/CD Pipelines',                      domain:'Engineering',   coverage:'none'},
+  {slug:'platform',             display:'Platform Engineering',                 domain:'Engineering',   coverage:'none'},
+  {slug:'mlops',                display:'MLOps',                                domain:'AI/ML',         coverage:'none'},
+  {slug:'aiops',                display:'AIOps',                                domain:'AI/ML',         coverage:'none'},
+  {slug:'troubleshooting',      display:'General Troubleshooting',              domain:'SRE',           coverage:'none'},
+  {slug:'coding',               display:'Coding & Scripting',                   domain:'Engineering',   coverage:'none'},
+  {slug:'behavioral',           display:'Behavioral / Leadership Principles',   domain:'Soft Skills',   coverage:'none'},
+];
+
+const FLOWS = [
+  {id:'concept',  stage:1, ok:true,  icon:'📚', title:'Concept Prep',        desc:'Adaptive Socratic teaching, flashcards, and MCQ for any infrastructure topic.', cta:'Choose a topic →'},
+  {id:'incident', stage:2, ok:false, icon:'🚨', title:'Production Scenarios', desc:'Live incident simulation — you\'re on-call, PrepOps responds as the terminal.'},
+  {id:'debugging',stage:2, ok:false, icon:'🔬', title:'Debugging Lab',        desc:'Broken configs and outputs — diagnose root cause and propose a fix.'},
+  {id:'coding',   stage:2, ok:false, icon:'⚡', title:'Coding Reasoning',     desc:'Problem walkthrough: approach, complexity, communication, optimal reveal.'},
+  {id:'mock',     stage:3, ok:false, icon:'🎯', title:'Mock Interview',       desc:'Full persona-driven interview with hiring-signal feedback at the end.'},
+  {id:'design',   stage:3, ok:false, icon:'🏗️', title:'System Design',        desc:'Design an infrastructure system end-to-end with adversarial follow-ups.'},
+  {id:'jd',       stage:4, ok:false, icon:'📋', title:'JD-Driven Prep',       desc:'Paste a job description — PrepOps generates your full personalized prep plan.'},
+];
+
+const MODES = [
+  {id:'learn',      label:'Learn Concept', sub:'Socratic dialogue with follow-up questions'},
+  {id:'flashcards', label:'Flashcards',    sub:'Front/back cards, self-graded'},
+  {id:'mcq',        label:'MCQ Practice',  sub:'Scenario-based MCQ with reasoning explanations'},
+];
+
+// ── App state ─────────────────────────────────────────────────────────────────
+const S = {
+  topic: null,
+  diff:  'Senior',
+  mode:  'learn',
+  msgs:  [],       // {role, content}
+  query: '',
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function badge(coverage) {
+  return coverage === 'full'
+    ? `<span class="inline-flex text-xs px-2 py-0.5 rounded-md border bg-emerald-950 border-emerald-800 text-emerald-400 font-medium">✓ Full curriculum</span>`
+    : `<span class="inline-flex text-xs px-2 py-0.5 rounded-md border bg-amber-950 border-amber-800 text-amber-400 font-medium">⚠ General knowledge</span>`;
+}
+
+function modeLabel(id) { return MODES.find(m => m.id === id)?.label || id; }
+function modeSub(id)   { return MODES.find(m => m.id === id)?.sub   || ''; }
+
+const claudeOk = () =>
+  typeof window.claude !== 'undefined' && typeof window.claude.complete === 'function';
+
+async function ask(prompt) {
+  if (!claudeOk()) throw new Error('Open this file in Claude.ai to enable AI.');
+  return await window.claude.complete(prompt);
+}
+
+// ── Prompts ───────────────────────────────────────────────────────────────────
+const CORE = `You are PrepOps, an AI interview coach for Infrastructure, DevOps, SRE, Cloud, and Platform Engineering.
+
+Philosophy:
+- Train reasoning and production thinking — never memorization
+- Ask follow-up questions like a real technical interviewer
+- Surface misconceptions actively — name them when you see them
+- Give specific feedback; never say "good effort" without naming exactly what was good
+- Frame feedback as hiring signal: Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire
+
+Be direct, specific, production-grounded. Keep responses conversational.`;
+
+function covNote(t) {
+  return t.coverage === 'full'
+    ? `PrepOps has a full structured curriculum for "${t.display}" — use production-grounded questions, common misconceptions, and real debugging scenarios.`
+    : `PrepOps has no structured curriculum for "${t.display}" — draw on general knowledge and be upfront about it.`;
+}
+
+const MPROMPTS = {
+  learn: t =>
+`Mode: Learn Concept | Topic: ${t.display} | Level: ${S.diff}
+${covNote(t)}
+
+Run an adaptive Socratic session. Open with ONE concrete, production-grounded question — not "what is X", ask "walk me through what happens when…" or "when would you choose X over Y?". Probe based on their answer; one follow-up at a time. After 5-7 exchanges surface the key misconception most engineers have about this topic. Keep responses tight. Ask your opening question now.`,
+
+  flashcards: t =>
+`Mode: Flashcards | Topic: ${t.display} | Level: ${S.diff}
+${covNote(t)}
+
+Generate one flashcard at a time. Show only the FRONT first. Wait for user response, then show BACK.
+
+FRONT: [Production-grounded question — test "why" and "what breaks", not definitions]
+
+After user responds:
+BACK: [2-4 sentence answer. Key insight + why it matters in production. Not a textbook definition.]
+
+Then ask: "How'd that go? Got it / Almost / Missed it"
+Adjust difficulty based on self-grade. Start with card 1 — show only the FRONT.`,
+
+  mcq: t =>
+`Mode: MCQ Practice | Topic: ${t.display} | Level: ${S.diff}
+${covNote(t)}
+
+Generate one scenario-based MCQ at a time.
+
+Q: [Scenario — not a definition. "You notice X symptom, what's the most likely cause?"]
+A) …  B) …  C) …  D) …
+
+After user answers: name the correct answer, explain WHY it's correct (the principle), explain what makes the wrong options wrong, state the production implication. Then ask if they're ready for the next question. Start with question 1 now.`,
+};
+
+function buildInit() {
+  return `${CORE}\n\n${MPROMPTS[S.mode](S.topic)}\n\nPrepOps:`;
+}
+
+function buildTurn(userMsg) {
+  const hist = S.msgs.map(m => `${m.role==='user'?'User':'PrepOps'}: ${m.content}`).join('\n\n');
+  return `${CORE}\n\n${MPROMPTS[S.mode](S.topic)}\n\nConversation so far:\n${hist}\n\nUser: ${userMsg}\n\nPrepOps:`;
+}
+
+function buildReport() {
+  const ml  = modeLabel(S.mode);
+  const ex  = S.msgs.filter(m => m.role==='user').length;
+  const txt = S.msgs.map(m => `${m.role==='user'?'User':'PrepOps'}: ${m.content}`).join('\n\n');
+  return `Generate a concise PrepOps session report.
+
+Topic: ${S.topic.display} | Mode: ${ml} | Level: ${S.diff} | Exchanges: ${ex}
+
+Session transcript:
+${txt}
+
+${ex<3?'NOTE: Very short session — note this at the top.\n\n':''}Write the report in this exact format:
+
+OVERALL ASSESSMENT
+[Strong Hire / Lean Hire / Borderline / Lean No Hire / No Hire]
+[One specific sentence explaining what drove that signal — cite the actual exchange]
+
+STRENGTHS
+1. [Specific — name what they said or did correctly and why it matters]
+2. [Specific strength]
+3. [Specific strength — write only what you have if session was short]
+
+AREAS TO IMPROVE
+1. [Specific gap — name what was missing and the production implication]
+2. [Specific gap]
+3. [Specific gap — write only what you have if session was short]
+
+NEXT SESSION
+Topic: [specific topic recommendation]
+Mode: [Learn Concept / Flashcards / MCQ Practice]
+Why: [One sentence — what this session revealed that makes this the right next step]
+
+Every point must be specific. Hire signal must be one of the 5 options above exactly.`;
+}
+
+// ── Message bubble HTML ───────────────────────────────────────────────────────
+function bubbleHTML(role, content) {
+  const e = esc(content);
+  if (role === 'user') return `
+    <div class="flex justify-end mb-5">
+      <div class="max-w-[78%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-indigo-600 text-white rounded-2xl rounded-br-sm">${e}</div>
+      <div class="w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white ml-2.5 mt-0.5 flex-shrink-0">U</div>
+    </div>`;
+  return `
+    <div class="flex justify-start mb-5">
+      <div class="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white mr-2.5 mt-0.5 flex-shrink-0">P</div>
+      <div class="max-w-[78%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap bg-slate-800 text-slate-100 rounded-2xl rounded-bl-sm border border-slate-700">${e}</div>
+    </div>`;
+}
+
+// ── HOME ──────────────────────────────────────────────────────────────────────
+function showHome() {
+  const cards = FLOWS.map(f => `
+    <button ${f.ok ? 'onclick="showSetup()"' : 'disabled'}
+      class="relative text-left p-5 rounded-xl border transition-all ${f.ok ? 'bg-slate-900 border-slate-700 hover:border-indigo-500 hover:bg-slate-800 cursor-pointer' : 'bg-slate-900/40 border-slate-800/60 cursor-not-allowed'}">
+      ${!f.ok ? `<span class="absolute top-3 right-3 text-xs text-slate-600 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">Stage ${f.stage}</span>` : ''}
+      <div class="text-2xl mb-3">${f.icon}</div>
+      <h3 class="font-semibold text-sm mb-1.5 ${f.ok ? 'text-white' : 'text-slate-500'}">${esc(f.title)}</h3>
+      <p class="text-xs leading-relaxed ${f.ok ? 'text-slate-400' : 'text-slate-600'}">${esc(f.desc)}</p>
+      ${f.ok ? `<div class="mt-4 text-indigo-400 text-xs font-medium">${f.cta}</div>` : ''}
+    </button>`).join('');
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-5xl mx-auto flex items-center justify-between">
+          <div>
+            <span class="text-white font-bold text-lg">PrepOps</span>
+            <span class="text-slate-500 text-xs ml-3">Infrastructure · DevOps · SRE · Cloud</span>
+          </div>
+          ${!claudeOk() ? `<div class="text-xs bg-amber-950 border border-amber-800 text-amber-400 px-3 py-1.5 rounded-lg">⚠ Open in Claude.ai to enable AI</div>` : ''}
+        </div>
+      </div>
+      <div class="max-w-5xl mx-auto px-6 pt-12 pb-8">
+        <h1 class="text-3xl font-bold text-white mb-3">What would you like to practice?</h1>
+        <p class="text-slate-400">Adaptive coaching, production scenarios, and hiring-signal feedback.</p>
+      </div>
+      <div class="max-w-5xl mx-auto px-6 pb-16">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">${cards}</div>
+        <p class="mt-8 text-center text-slate-600 text-xs">PrepOps trains reasoning, not memorization · AI billed to your Claude.ai account</p>
+      </div>
+    </div>`;
+}
+
+// ── SETUP ─────────────────────────────────────────────────────────────────────
+function dropHTML() {
+  const q  = S.query;
+  const list = q.length === 0
+    ? TOPICS.filter(t => t.coverage === 'full').slice(0, 9)
+    : TOPICS.filter(t =>
+        t.display.toLowerCase().includes(q.toLowerCase()) ||
+        t.domain.toLowerCase().includes(q.toLowerCase())
+      ).slice(0, 8);
+  const hasCustom = q.trim() &&
+    !TOPICS.find(t => t.display.toLowerCase() === q.trim().toLowerCase());
+
+  const rows = list.map((t, i) => `
+    <button onmousedown="pickTopic('${esc(t.slug)}')"
+      class="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 transition-colors ${i < list.length-1 || hasCustom ? 'border-b border-slate-800' : ''}">
+      <span>
+        <span class="text-white">${esc(t.display)}</span>
+        <span class="text-slate-600 text-xs ml-2">${esc(t.domain)}</span>
+      </span>
+      ${badge(t.coverage)}
+    </button>`).join('');
+
+  const customRow = hasCustom ? `
+    <button onmousedown="pickCustom()"
+      class="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 text-sm hover:bg-slate-800 bg-slate-800/40 border-t border-slate-700">
+      <span class="text-indigo-400">Use "${esc(q.trim())}" as custom topic</span>
+      ${badge('none')}
+    </button>` : '';
+
+  const empty = list.length === 0 && !hasCustom
+    ? `<div class="px-4 py-3 text-slate-500 text-sm">No matches</div>` : '';
+
+  return `<div class="absolute z-20 w-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+    ${rows}${customRow}${empty}
+  </div>`;
+}
+
+function showSetup() {
+  S.query = S.topic ? S.topic.display : '';
+
+  const diffBtns = ['Junior','Mid','Senior','Staff'].map(d => `
+    <button onclick="pickDiff('${d}')" id="diff-${d}"
+      class="px-4 py-2 rounded-lg text-sm font-medium border transition-all ${S.diff===d ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}">
+      ${d}
+    </button>`).join('');
+
+  const modeBtns = MODES.map(m => `
+    <button onclick="pickMode('${m.id}')" id="mode-${m.id}"
+      class="w-full text-left px-4 py-3.5 rounded-xl border transition-all ${S.mode===m.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}">
+      <div class="text-sm font-medium ${S.mode===m.id ? 'text-indigo-300' : 'text-slate-300'}">${m.label}</div>
+      <div class="text-xs text-slate-500 mt-0.5">${m.sub}</div>
+    </button>`).join('');
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-2xl mx-auto flex items-center gap-4">
+          <button onclick="showHome()" class="text-slate-400 hover:text-white text-sm transition-colors">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Concept Prep</span>
+        </div>
+      </div>
+      <div class="max-w-2xl mx-auto px-6 py-10 space-y-10">
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">What would you like to study?</label>
+          <div class="relative">
+            <input id="topic-inp" type="text" value="${esc(S.query)}" autocomplete="off"
+              placeholder="Search topics, or type anything…"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 pr-44 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+            <div id="badge-slot" class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              ${S.topic ? badge(S.topic.coverage) : ''}
+            </div>
+            <div id="drop"></div>
+          </div>
+          <p id="cov-msg" class="mt-2 text-xs text-slate-500">
+            ${S.topic ? (S.topic.coverage==='full'
+              ? '✅ Full PrepOps curriculum — structured concepts, misconceptions, and production scenarios.'
+              : '⚠ General knowledge mode — no structured curriculum for this topic.') : ''}
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Difficulty</label>
+          <div class="flex gap-2 flex-wrap">${diffBtns}</div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-200 mb-3">Mode</label>
+          <div class="space-y-2">${modeBtns}</div>
+        </div>
+
+        <button id="go-btn" onclick="showReview()"
+          class="w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${S.topic ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}"
+          ${S.topic ? '' : 'disabled'}>
+          ${S.topic ? `Start ${modeLabel(S.mode)} →` : 'Select a topic to continue'}
+        </button>
+
+      </div>
+    </div>`;
+
+  // Topic input events
+  const inp = $('topic-inp');
+  inp.addEventListener('input', () => {
+    S.query = inp.value;
+    S.topic = null;
+    $('drop').innerHTML = dropHTML();
+    $('badge-slot').innerHTML = '';
+    $('cov-msg').textContent = '';
+    refreshGoBtn();
+  });
+  inp.addEventListener('focus', () => { $('drop').innerHTML = dropHTML(); });
+  inp.addEventListener('blur',  () => { setTimeout(() => { $('drop').innerHTML = ''; }, 160); });
+}
+
+window.pickTopic = function(slug) {
+  const t = TOPICS.find(x => x.slug === slug);
+  if (!t) return;
+  S.topic = t;
+  S.query = t.display;
+  $('topic-inp').value = t.display;
+  $('drop').innerHTML = '';
+  $('badge-slot').innerHTML = badge(t.coverage);
+  $('cov-msg').textContent = t.coverage==='full'
+    ? '✅ Full PrepOps curriculum — structured concepts, misconceptions, and production scenarios.'
+    : '⚠ General knowledge mode — no structured curriculum for this topic.';
+  refreshGoBtn();
+};
+
+window.pickCustom = function() {
+  S.topic = { slug:'custom', display:S.query.trim(), domain:'Custom', coverage:'none' };
+  $('drop').innerHTML = '';
+  $('badge-slot').innerHTML = badge('none');
+  $('cov-msg').textContent = '⚠ General knowledge mode — no structured curriculum for this topic.';
+  refreshGoBtn();
+};
+
+window.pickDiff = function(d) {
+  S.diff = d;
+  ['Junior','Mid','Senior','Staff'].forEach(v => {
+    const b = $(`diff-${v}`);
+    if (!b) return;
+    b.className = `px-4 py-2 rounded-lg text-sm font-medium border transition-all ${S.diff===v ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'}`;
+  });
+};
+
+window.pickMode = function(id) {
+  S.mode = id;
+  MODES.forEach(m => {
+    const b = $(`mode-${m.id}`);
+    if (!b) return;
+    b.className = `w-full text-left px-4 py-3.5 rounded-xl border transition-all ${S.mode===m.id ? 'bg-indigo-950 border-indigo-600' : 'bg-slate-900 border-slate-700 hover:border-slate-600'}`;
+    b.querySelector('div').className = `text-sm font-medium ${S.mode===m.id ? 'text-indigo-300' : 'text-slate-300'}`;
+  });
+  refreshGoBtn();
+};
+
+function refreshGoBtn() {
+  const btn = $('go-btn');
+  if (!btn) return;
+  if (S.topic) {
+    btn.disabled = false;
+    btn.className = 'w-full py-3.5 rounded-xl font-semibold text-sm transition-all bg-indigo-600 hover:bg-indigo-500 text-white';
+    btn.textContent = `Start ${modeLabel(S.mode)} →`;
+  } else {
+    btn.disabled = true;
+    btn.className = 'w-full py-3.5 rounded-xl font-semibold text-sm transition-all bg-slate-800 text-slate-600 cursor-not-allowed';
+    btn.textContent = 'Select a topic to continue';
+  }
+}
+
+// ── REVIEW ─────────────────────────────────────────────────────────────────────
+window.showReview = function() {
+  if (!S.topic) return;
+  S.msgs = [];
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-xl mx-auto flex items-center gap-4">
+          <button onclick="showSetup()" class="text-slate-400 hover:text-white text-sm">← Back</button>
+          <div class="w-px h-4 bg-slate-700"></div>
+          <span class="text-white font-semibold text-sm">Session Review</span>
+        </div>
+      </div>
+      <div class="flex-1 flex items-center justify-center px-6 py-16">
+        <div class="w-full max-w-xl">
+          <p class="text-slate-400 text-sm mb-6">Review your settings before starting.</p>
+          <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden mb-6">
+            <div class="px-5 py-4 border-b border-slate-800 flex items-start justify-between gap-4">
+              <div>
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Topic</div>
+                <div class="text-white font-semibold text-base">${esc(S.topic.display)}</div>
+              </div>
+              ${badge(S.topic.coverage)}
+            </div>
+            <div class="grid grid-cols-2 divide-x divide-slate-800">
+              <div class="px-5 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Difficulty</div>
+                <div class="text-white font-medium">${esc(S.diff)}</div>
+              </div>
+              <div class="px-5 py-4">
+                <div class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Mode</div>
+                <div class="text-white font-medium">${esc(modeLabel(S.mode))}</div>
+                <div class="text-slate-500 text-xs mt-0.5">${esc(modeSub(S.mode))}</div>
+              </div>
+            </div>
+            ${S.topic.coverage==='none' ? `
+            <div class="px-5 py-3 bg-amber-950/40 border-t border-amber-900/50">
+              <p class="text-amber-400 text-xs">⚠ No structured curriculum — PrepOps will use general knowledge.</p>
+            </div>` : ''}
+          </div>
+          <button onclick="beginSession()" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-sm">Begin Session →</button>
+          <button onclick="showSetup()" class="w-full mt-3 py-2.5 text-slate-500 hover:text-slate-300 text-sm">← Change settings</button>
+        </div>
+      </div>
+    </div>`;
+};
+
+// ── SESSION ───────────────────────────────────────────────────────────────────
+window.beginSession = async function() {
+  renderSessionShell();
+  setLoad(true);
+  try {
+    const res = await ask(buildInit());
+    S.msgs.push({role:'assistant', content:res});
+    setLoad(false);
+    addBubble('assistant', res);
+  } catch(e) {
+    setLoad(false);
+    showSessErr(e.message);
+  }
+};
+
+function renderSessionShell() {
+  $('app').innerHTML = `
+    <div style="display:flex;flex-direction:column;height:100vh" class="bg-slate-950 text-slate-100">
+      <div class="flex-shrink-0 border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <button onclick="showSetup()" class="text-slate-500 hover:text-white text-sm flex-shrink-0">←</button>
+          <span class="text-white text-sm font-medium truncate">${esc(S.topic.display)}</span>
+        </div>
+        <button onclick="showReport()" class="flex-shrink-0 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-1.5 rounded-lg">
+          End session →
+        </button>
+      </div>
+
+      <div id="msg-scroll" class="hs" style="flex:1;overflow-y:auto">
+        <div class="max-w-3xl mx-auto px-4 pt-4 pb-6">
+          <div class="mb-5 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-4 flex-wrap text-xs text-slate-400">
+            <span class="font-medium text-slate-300">${esc(modeLabel(S.mode))}</span>
+            <span class="text-slate-700">·</span>
+            <span>${esc(S.diff)}</span>
+            <span class="text-slate-700">·</span>
+            ${badge(S.topic.coverage)}
+            <span class="ml-auto text-slate-600" id="ex-ct">0 exchanges</span>
+          </div>
+          <div id="msg-list"></div>
+          <div id="load-dots" style="display:none" class="flex items-center gap-2 px-4 py-3 text-slate-400 text-sm">
+            <div class="w-7 h-7 rounded-full bg-indigo-700 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">P</div>
+            <span>PrepOps is thinking</span>
+            <span class="flex gap-0.5 ml-0.5"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+          </div>
+          <div id="sess-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl mb-4"></div>
+          <div id="anchor"></div>
+        </div>
+      </div>
+
+      <div class="flex-shrink-0 border-t border-slate-800 px-4 py-4">
+        <div class="max-w-3xl mx-auto flex gap-3">
+          <textarea id="inp" rows="2" placeholder="Your answer… (Enter to send, Shift+Enter for newline)"
+            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none"></textarea>
+          <button id="send-btn" class="flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 rounded-xl text-sm font-medium">
+            Send
+          </button>
+        </div>
+        <p class="max-w-3xl mx-auto mt-2 text-right text-xs text-slate-700">Responses billed to your Claude.ai account</p>
+      </div>
+    </div>`;
+
+  $('send-btn').addEventListener('click', sendMsg);
+  $('inp').addEventListener('keydown', e => {
+    if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+  });
+}
+
+function addBubble(role, content) {
+  const list = $('msg-list');
+  if (!list) return;
+  const d = document.createElement('div');
+  d.innerHTML = bubbleHTML(role, content);
+  list.appendChild(d);
+  const n = S.msgs.filter(m => m.role==='user').length;
+  const ct = $('ex-ct');
+  if (ct) ct.textContent = `${n} exchange${n!==1?'s':''}`;
+  $('anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+function setLoad(on) {
+  const el = $('load-dots');
+  if (el) el.style.display = on ? 'flex' : 'none';
+  const btn = $('send-btn');
+  const inp = $('inp');
+  if (btn) btn.disabled = on;
+  if (inp) inp.disabled = on;
+}
+
+function showSessErr(msg) {
+  const el = $('sess-err');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = msg;
+  $('anchor')?.scrollIntoView({behavior:'smooth'});
+}
+
+async function sendMsg() {
+  const inp = $('inp');
+  if (!inp) return;
+  const txt = inp.value.trim();
+  if (!txt) return;
+  inp.value = '';
+  const errEl = $('sess-err');
+  if (errEl) errEl.style.display = 'none';
+
+  S.msgs.push({role:'user', content:txt});
+  addBubble('user', txt);
+  setLoad(true);
+
+  try {
+    const res = await ask(buildTurn(txt));
+    S.msgs.push({role:'assistant', content:res});
+    setLoad(false);
+    addBubble('assistant', res);
+  } catch(e) {
+    S.msgs.pop();
+    setLoad(false);
+    showSessErr(e.message);
+  }
+}
+
+// ── REPORT ────────────────────────────────────────────────────────────────────
+window.showReport = async function() {
+  const ml = modeLabel(S.mode);
+  const ex = S.msgs.filter(m => m.role==='user').length;
+
+  $('app').innerHTML = `
+    <div class="min-h-screen bg-slate-950 text-slate-100">
+      <div class="border-b border-slate-800 px-6 py-4">
+        <div class="max-w-3xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 class="text-white font-semibold text-sm">Session Report</h1>
+            <p class="text-slate-500 text-xs mt-0.5">${esc(S.topic.display)} · ${esc(ml)} · ${esc(S.diff)} · ${ex} exchange${ex!==1?'s':''}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="showSetup()" class="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg">New session</button>
+            <button onclick="showHome()" class="text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg">Home</button>
+          </div>
+        </div>
+      </div>
+      <div class="max-w-3xl mx-auto px-6 py-10">
+        <div id="rpt-load" class="flex flex-col items-center gap-4 py-20">
+          <div class="flex gap-1"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <p class="text-slate-400 text-sm">Generating your session report…</p>
+        </div>
+        <div id="rpt-box" style="display:none" class="bg-slate-900 border border-slate-700 rounded-xl p-6">
+          <pre id="rpt-txt" class="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap overflow-x-auto"></pre>
+        </div>
+        <div id="rpt-err" style="display:none" class="bg-red-950 border border-red-800 text-red-300 text-sm px-4 py-3 rounded-xl"></div>
+        <div id="rpt-foot" style="display:none" class="mt-8 flex justify-center">
+          <button onclick="showSetup()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium">Practice again →</button>
+        </div>
+      </div>
+    </div>`;
+
+  try {
+    const res = await ask(buildReport());
+    $('rpt-load').style.display = 'none';
+    $('rpt-txt').textContent = res;
+    $('rpt-box').style.display = 'block';
+    $('rpt-foot').style.display = 'flex';
+  } catch(e) {
+    $('rpt-load').style.display = 'none';
+    $('rpt-err').style.display = 'block';
+    $('rpt-err').textContent = e.message;
+  }
+};
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+showHome();
+</script>
+</body>
+</html>
