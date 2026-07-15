@@ -1,0 +1,5 @@
+node_modules/
+src/assets/engine.ts
+.dev.vars
+dist/
+.wrangler/
