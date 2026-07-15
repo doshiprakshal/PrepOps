@@ -10,8 +10,8 @@
  * Auto: runs before `wrangler dev` and `wrangler deploy` via package.json scripts.
  */
 
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
-import { resolve, join, basename } from 'path';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
+import { resolve, join, basename, dirname } from 'path';
 
 const ROOT = resolve(__dirname, '../../');
 const OUT  = resolve(__dirname, '../src/assets/engine.ts');
@@ -121,5 +121,6 @@ const output = [
   `export const TOPICS: Array<{ id: string; display: string; coverage: 'full' | 'general' }> = ${JSON.stringify(TOPICS, null, 2)};\n`,
 ].join('\n');
 
+mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, output, 'utf8');
 console.log(`✓ engine.ts written (${Math.round(output.length / 1024)}KB) — ${Object.keys(prompts).length} prompts, ${Object.keys(personas).length} personas, ${Object.keys(incidents).length} incidents`);
