@@ -1,0 +1,3 @@
+# Copy to .dev.vars and set a real secret before running `npm run dev`
+# Generate: openssl rand -hex 32
+SESSION_SECRET=replace-with-a-long-random-string

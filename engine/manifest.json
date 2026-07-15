@@ -1,0 +1,133 @@
+{
+  "version": "2.0.0",
+  "description": "PrepOps shared engine manifest — maps every mode to the assets it requires. Both the Claude Code plugin and the Remote MCP server read from this file. The source-of-truth folders (prompts/, personas/, incidents/, rubrics/, knowledge/) are never duplicated.",
+
+  "modes": {
+    "concept": {
+      "prompts": ["prompts/learn_concept.md", "prompts/flashcards.md", "prompts/mcq.md"],
+      "knowledge": "knowledge/",
+      "rubric": "templates/evaluation_rubric.yaml",
+      "sub_modes": ["learn", "flashcard", "mcq"],
+      "default_sub_mode": "learn"
+    },
+    "incident": {
+      "prompt": "prompts/scenarios.md",
+      "incidents": [
+        "incidents/kubernetes/mtu-mismatch.yaml",
+        "incidents/kubernetes/oom-kill-cascade.yaml",
+        "incidents/linux/disk-full-open-handles.yaml",
+        "incidents/networking/dns-blackhole.yaml",
+        "incidents/sre/cascading-retry-storm.yaml"
+      ],
+      "templates": [
+        "incident-templates/pod-not-starting.yaml",
+        "incident-templates/network-latency.yaml",
+        "incident-templates/service-returning-errors.yaml",
+        "incident-templates/high-cpu-or-memory.yaml"
+      ],
+      "rubric": "templates/evaluation_rubric.yaml"
+    },
+    "debugging": {
+      "prompt": "prompts/debugging_labs.md",
+      "knowledge": "knowledge/",
+      "rubric": "templates/evaluation_rubric.yaml",
+      "lab_types": ["k8s_yaml", "terraform", "helm", "promql", "linux", "custom"]
+    },
+    "coding": {
+      "prompt": "prompts/coding_interview.md",
+      "rubric": "templates/evaluation_rubric.yaml"
+    },
+    "mock": {
+      "prompt": "prompts/mock_interview.md",
+      "personas": "personas/",
+      "rubric": "templates/evaluation_rubric.yaml",
+      "hiring_signals": "rubrics/hiring-signals.yaml",
+      "phases": ["warm_up", "core_technical", "curveball", "production", "closing"],
+      "signal_label": "PrepOps rubric signal — reflects this practice session only"
+    },
+    "whiteboard": {
+      "prompt": "prompts/whiteboard.md",
+      "rubric": "templates/evaluation_rubric.yaml",
+      "phases": ["requirements", "design_review"],
+      "no_hire_signal": true
+    },
+    "system_design": {
+      "prompt": "prompts/system_design.md",
+      "rubric": "templates/evaluation_rubric.yaml",
+      "phases": ["requirements", "high_level", "deep_dives", "adversarial"],
+      "no_hire_signal": true
+    },
+    "rapid_fire": {
+      "prompt": "prompts/rapid_fire.md",
+      "rubric": "templates/evaluation_rubric.yaml",
+      "no_hire_signal": true,
+      "coding_redirect": true
+    },
+    "mixed": {
+      "prompt": "prompts/mixed_mode.md",
+      "rubric": "templates/evaluation_rubric.yaml",
+      "hire_signal_min_exchanges": 10
+    },
+    "jd_parser": {
+      "prompt": "prompts/jd_parser.md",
+      "rubric": "templates/evaluation_rubric.yaml",
+      "hiring_signals": "rubrics/hiring-signals.yaml",
+      "output": "runtime_blueprint"
+    }
+  },
+
+  "personas": {
+    "google_sre":          "personas/google_sre.yaml",
+    "amazon_devops":       "personas/amazon_devops.yaml",
+    "netflix_sre":         "personas/netflix_sre.yaml",
+    "stripe_engineering":  "personas/stripe_engineering.yaml",
+    "startup_devops":      "personas/startup_devops.yaml",
+    "staff_engineer":      "personas/staff_engineer.yaml",
+    "principal_engineer":  "personas/principal_engineer.yaml",
+    "friendly_mentor":     "personas/friendly_mentor.yaml",
+    "strict_bar_raiser":   "personas/strict_bar_raiser.yaml"
+  },
+
+  "rubrics": {
+    "dimensions":    "rubrics/dimensions.yaml",
+    "hiring_signals":"rubrics/hiring-signals.yaml",
+    "evaluation":    "templates/evaluation_rubric.yaml"
+  },
+
+  "knowledge_domains": {
+    "kubernetes": {
+      "files": ["knowledge/kubernetes/pods.yaml", "knowledge/kubernetes/services.yaml", "knowledge/kubernetes/networking.yaml"],
+      "coverage": "full"
+    },
+    "linux": {
+      "files": ["knowledge/linux/processes.yaml", "knowledge/linux/filesystems.yaml", "knowledge/linux/performance.yaml"],
+      "coverage": "full"
+    },
+    "aws": {
+      "files": ["knowledge/aws/autoscaling.yaml", "knowledge/aws/iam.yaml", "knowledge/aws/load-balancing.yaml"],
+      "coverage": "full"
+    },
+    "networking": {
+      "files": ["knowledge/networking/dns.yaml", "knowledge/networking/tcp.yaml", "knowledge/networking/load-balancing.yaml"],
+      "coverage": "full"
+    },
+    "terraform": {
+      "files": ["knowledge/terraform/state.yaml", "knowledge/terraform/modules.yaml", "knowledge/terraform/drift.yaml"],
+      "coverage": "full"
+    },
+    "sre": {
+      "files": ["knowledge/sre/slos-error-budgets.yaml", "knowledge/sre/incident-response.yaml", "knowledge/sre/reliability-patterns.yaml"],
+      "coverage": "full"
+    }
+  },
+
+  "engine_constraints": {
+    "no_llm_calls_from_server": true,
+    "no_database": true,
+    "no_external_search_apis": true,
+    "intelligence_layer": "claude",
+    "session_persistence": "signed_token",
+    "ui_must_not_simplify_cli": true,
+    "cli_is_source_of_truth": "skills/claude/SKILL.md"
+  }
+}
