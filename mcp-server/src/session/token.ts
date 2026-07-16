@@ -12,8 +12,9 @@ async function importKey(secret: string): Promise<CryptoKey> {
   );
 }
 
-function b64url(buf: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+function b64url(buf: ArrayBuffer | Uint8Array): string {
+  const view = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  return btoa(String.fromCharCode(...view))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=/g, '');
@@ -39,7 +40,7 @@ export async function verifyToken(token: string, secret: string): Promise<Sessio
   const sigB64  = token.slice(dot + 1);
 
   const key   = await importKey(secret);
-  const valid = await crypto.subtle.verify('HMAC', key, fromB64url(sigB64), ENC.encode(payload));
+  const valid = await crypto.subtle.verify('HMAC', key, new Uint8Array(fromB64url(sigB64)), ENC.encode(payload));
   if (!valid) return null;
 
   try {

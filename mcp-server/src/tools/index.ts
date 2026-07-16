@@ -66,9 +66,9 @@ type Handler       = AsyncHandler | SyncHandler;
 
 const HANDLERS: Record<string, Handler> = {
   get_home_options:           () => getHomeOptions(),
-  resolve_topic:              (i) => resolveTopic(i as Parameters<typeof resolveTopic>[0]),
-  prepare_research_request:   (i) => prepareResearchRequest(i as Parameters<typeof prepareResearchRequest>[0]),
-  build_runtime_blueprint:    (i) => buildRuntimeBlueprint(i as Parameters<typeof buildRuntimeBlueprint>[0]),
+  resolve_topic:              (i: Record<string, unknown>) => resolveTopic(i as Parameters<typeof resolveTopic>[0]),
+  prepare_research_request:   (i: Record<string, unknown>) => prepareResearchRequest(i as Parameters<typeof prepareResearchRequest>[0]),
+  build_runtime_blueprint:    (i: Record<string, unknown>) => buildRuntimeBlueprint(i as Parameters<typeof buildRuntimeBlueprint>[0]),
   start_concept_session:      (i, e) => startConceptSession(i as Parameters<typeof startConceptSession>[0], e),
   continue_concept_session:   (i, e) => continueConceptSession(i as Parameters<typeof continueConceptSession>[0], e),
   start_incident:             (i, e) => startIncident(i as Parameters<typeof startIncident>[0], e),
