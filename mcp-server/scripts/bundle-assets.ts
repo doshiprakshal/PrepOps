@@ -84,6 +84,9 @@ for (const domain of ['kubernetes', 'linux', 'aws', 'networking', 'terraform', '
   }
 }
 
+// ── Engine manifest ──────────────────────────────────────────────────────────
+const manifest = JSON.parse(read('engine/manifest.json')) as Record<string, unknown>;
+
 // ── CORE prompt ──────────────────────────────────────────────────────────────
 const CORE = `You are PrepOps, an AI interview coach for Infrastructure, DevOps, SRE, Cloud, and Platform Engineering.
 
@@ -119,6 +122,7 @@ const output = [
   tsRecord('RUBRICS', rubrics),
   tsRecord('KNOWLEDGE', knowledge),
   `export const TOPICS: Array<{ id: string; display: string; coverage: 'full' | 'general' }> = ${JSON.stringify(TOPICS, null, 2)};\n`,
+  `export const MANIFEST: Record<string, unknown> = ${JSON.stringify(manifest, null, 2)};\n`,
 ].join('\n');
 
 mkdirSync(dirname(OUT), { recursive: true });

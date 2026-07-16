@@ -4,6 +4,12 @@
 
   "modes": {
     "concept": {
+      "display": "Concept Prep",
+      "description": "Adaptive Socratic teaching, flashcards, and MCQ for any infra topic.",
+      "best_for": ["learn", "teach", "explain", "study", "flashcard", "mcq", "quiz", "understand", "what is", "how does"],
+      "start_tool": "start_concept_session",
+      "required_params": ["topic", "difficulty"],
+      "optional_params": ["persona", "concept_mode", "blueprint"],
       "prompts": ["prompts/learn_concept.md", "prompts/flashcards.md", "prompts/mcq.md"],
       "knowledge": "knowledge/",
       "rubric": "templates/evaluation_rubric.yaml",
@@ -11,6 +17,12 @@
       "default_sub_mode": "learn"
     },
     "incident": {
+      "display": "Production Scenarios",
+      "description": "Live incident simulation — you're on-call, PrepOps responds as the terminal.",
+      "best_for": ["incident", "scenario", "on-call", "oncall", "troubleshoot production", "production issue", "outage", "debugging production"],
+      "start_tool": "start_incident",
+      "required_params": ["incident_domain", "difficulty"],
+      "optional_params": ["persona", "incident_id", "custom_incident", "blueprint"],
       "prompt": "prompts/scenarios.md",
       "incidents": [
         "incidents/kubernetes/mtu-mismatch.yaml",
@@ -28,16 +40,35 @@
       "rubric": "templates/evaluation_rubric.yaml"
     },
     "debugging": {
+      "display": "Debugging Lab",
+      "description": "Broken configs and outputs — diagnose root cause and propose a safe fix.",
+      "best_for": ["debugging", "debug", "broken config", "diagnose", "fix config", "lab", "yaml", "terraform config", "bad config"],
+      "start_tool": "start_debugging_lab",
+      "required_params": ["difficulty"],
+      "optional_params": ["lab_type", "lab_topic", "persona", "blueprint"],
       "prompt": "prompts/debugging_labs.md",
       "knowledge": "knowledge/",
       "rubric": "templates/evaluation_rubric.yaml",
       "lab_types": ["k8s_yaml", "terraform", "helm", "promql", "linux", "custom"]
     },
     "coding": {
+      "display": "Coding Reasoning",
+      "description": "Problem walkthrough: approach, complexity, communication, and optimal reveal.",
+      "best_for": ["coding", "algorithm", "leetcode", "data structure", "big o", "code problem", "dynamic programming", "binary search", "graph", "sorting"],
+      "start_tool": "start_coding_reasoning",
+      "required_params": ["difficulty"],
+      "optional_params": ["persona", "coding_source", "coding_problem", "coding_company", "blueprint"],
+      "coding_only": true,
       "prompt": "prompts/coding_interview.md",
       "rubric": "templates/evaluation_rubric.yaml"
     },
     "mock": {
+      "display": "Mock Interview",
+      "description": "Full 5-phase persona-driven interview with PrepOps rubric signal verdict.",
+      "best_for": ["mock interview", "interview", "practice interview", "interviewer", "interviewing me", "act as interviewer", "interview prep"],
+      "start_tool": "start_mock_interview",
+      "required_params": ["role", "difficulty", "persona"],
+      "optional_params": ["focus_areas", "interview_length", "company", "jd_context", "blueprint"],
       "prompt": "prompts/mock_interview.md",
       "personas": "personas/",
       "rubric": "templates/evaluation_rubric.yaml",
@@ -46,35 +77,80 @@
       "signal_label": "PrepOps rubric signal — reflects this practice session only"
     },
     "whiteboard": {
+      "display": "Whiteboard Interview",
+      "description": "Explain architectures — requirements, design, failure handling, and trade-offs.",
+      "best_for": ["whiteboard", "explain architecture", "architecture interview", "design on whiteboard", "draw out", "walk me through your architecture"],
+      "start_tool": "start_whiteboard",
+      "required_params": ["wb_topic", "difficulty"],
+      "optional_params": ["persona", "blueprint"],
       "prompt": "prompts/whiteboard.md",
       "rubric": "templates/evaluation_rubric.yaml",
       "phases": ["requirements", "design_review"],
       "no_hire_signal": true
     },
     "system_design": {
+      "display": "System Design",
+      "description": "Design a full system across 4 structured phases with adversarial probing.",
+      "best_for": ["system design", "design a system", "design interview", "architect a system", "design url shortener", "design twitter", "design netflix"],
+      "start_tool": "start_system_design",
+      "required_params": ["sd_system", "difficulty"],
+      "optional_params": ["persona", "sd_scale", "sd_constraints", "blueprint"],
       "prompt": "prompts/system_design.md",
       "rubric": "templates/evaluation_rubric.yaml",
       "phases": ["requirements", "high_level", "deep_dives", "adversarial"],
       "no_hire_signal": true
     },
     "rapid_fire": {
+      "display": "Rapid Fire",
+      "description": "Fast-paced breadth check — one question at a time, instant ✓/~/✗ feedback.",
+      "best_for": ["rapid fire", "quick questions", "breadth check", "quiz me quickly", "lots of questions", "rapid quiz"],
+      "start_tool": "start_rapid_fire",
+      "required_params": ["topic", "difficulty"],
+      "optional_params": ["persona", "rf_count", "blueprint"],
       "prompt": "prompts/rapid_fire.md",
       "rubric": "templates/evaluation_rubric.yaml",
       "no_hire_signal": true,
       "coding_redirect": true
     },
     "mixed": {
+      "display": "Mixed Mode",
+      "description": "PrepOps controls the mode mix based on your performance in one continuous session.",
+      "best_for": ["mixed", "adaptive", "let prepops decide", "surprise me", "mixed session", "you decide", "pick for me"],
+      "start_tool": "start_mixed_mode",
+      "required_params": ["topic", "difficulty"],
+      "optional_params": ["persona", "session_length", "blueprint"],
       "prompt": "prompts/mixed_mode.md",
       "rubric": "templates/evaluation_rubric.yaml",
       "hire_signal_min_exchanges": 10
     },
     "jd_parser": {
+      "display": "Role Prep (JD Parser)",
+      "description": "Paste a JD — PrepOps builds a prep plan, gap analysis, and targeted sessions.",
+      "best_for": ["job description", "jd", "preparing for a role", "role prep", "paste jd", "this is the job description"],
+      "start_tool": "prepare_research_request",
+      "required_params": ["jd_text"],
+      "optional_params": ["resume_text", "known_details"],
+      "internal": true,
       "prompt": "prompts/jd_parser.md",
       "rubric": "templates/evaluation_rubric.yaml",
       "hiring_signals": "rubrics/hiring-signals.yaml",
       "output": "runtime_blueprint"
     }
   },
+
+  "persona_metadata": {
+    "google_sre":          { "label": "Google SRE",          "sub": "Systems thinking, SLOs, scale" },
+    "amazon_devops":       { "label": "Amazon DevOps",       "sub": "Leadership Principles, operational excellence" },
+    "netflix_sre":         { "label": "Netflix SRE",         "sub": "Failure tolerance, chaos, freedom & responsibility" },
+    "stripe_engineering":  { "label": "Stripe Engineering",  "sub": "Precision, correctness, edge cases" },
+    "startup_devops":      { "label": "Startup DevOps",      "sub": "Breadth, pragmatism, ship-first" },
+    "staff_engineer":      { "label": "Staff Engineer",      "sub": "Architecture, trade-offs, org impact" },
+    "principal_engineer":  { "label": "Principal Engineer",  "sub": "Industry direction, build vs buy" },
+    "friendly_mentor":     { "label": "Friendly Mentor",     "sub": "Supportive, patient, hints available" },
+    "strict_bar_raiser":   { "label": "Strict Bar-Raiser",   "sub": "Pushes back, no hand-holding, high bar" }
+  },
+
+  "difficulties": ["Junior", "Mid", "Intermediate", "Senior", "Staff", "Principal"],
 
   "personas": {
     "google_sre":          "personas/google_sre.yaml",
