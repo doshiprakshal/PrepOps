@@ -74,10 +74,12 @@ export interface SessionState {
   // hidden state only the server should track
   hidden?: {
     // incident: clues not yet revealed, red herrings seeded
-    incident_phase?:    'opening' | 'investigation' | 'resolution' | 'debrief';
-    clues_revealed?:    number;
+    incident_phase?:     'opening' | 'investigation' | 'resolution' | 'debrief';
+    clues_revealed?:     number;
+    working_hypothesis?: string | null;
+    known_signals?:      string[];
     // coding: problem statement hidden until reveal
-    coding_revealed?:   boolean;
+    coding_revealed?:    boolean;
     // rapid fire: questions asked so far
     rf_questions_asked?: number;
   };
