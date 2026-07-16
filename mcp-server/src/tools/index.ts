@@ -9,7 +9,7 @@ export interface Tool {
 export type ToolResult = Record<string, unknown>;
 
 // ── Imports ──────────────────────────────────────────────────────────────────
-import { homeToolDef,              getHomeOptions }          from './home.js';
+import { engineManifestDef,        getEngineManifest }       from './home.js';
 import { resolveTopicDef,          resolveTopic,
          prepareResearchRequestDef, prepareResearchRequest } from './research.js';
 import { buildRuntimeBlueprintDef, buildRuntimeBlueprint }  from './blueprint.js';
@@ -35,7 +35,7 @@ import { generateSessionReportDef, generateSessionReport }  from './report.js';
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 export const TOOL_DEFS: Tool[] = [
-  homeToolDef,
+  engineManifestDef,
   resolveTopicDef,
   prepareResearchRequestDef,
   buildRuntimeBlueprintDef,
@@ -65,7 +65,7 @@ type SyncHandler   = (input: Record<string, unknown>) => ToolResult;
 type Handler       = AsyncHandler | SyncHandler;
 
 const HANDLERS: Record<string, Handler> = {
-  get_home_options:           () => getHomeOptions(),
+  get_engine_manifest:        (i: Record<string, unknown>) => getEngineManifest(i as Parameters<typeof getEngineManifest>[0]),
   resolve_topic:              (i: Record<string, unknown>) => resolveTopic(i as Parameters<typeof resolveTopic>[0]),
   prepare_research_request:   (i: Record<string, unknown>) => prepareResearchRequest(i as Parameters<typeof prepareResearchRequest>[0]),
   build_runtime_blueprint:    (i: Record<string, unknown>) => buildRuntimeBlueprint(i as Parameters<typeof buildRuntimeBlueprint>[0]),
