@@ -3,20 +3,26 @@ import type { Env } from '../index.js';
 import { verifyToken } from '../session/token.js';
 import { CORE, RUBRICS } from '../assets/engine.js';
 
-export const generateSessionReportDef: Tool = {
-  name: 'generate_session_report',
-  description: 'Generates the report prompt for Claude to execute on the full session transcript. The report format and hire-signal rules vary by mode — only mock interview shows a hire-style signal.',
+export const generateReportDef: Tool = {
+  name: 'generate_report',
+  description: [
+    'Generates the PrepOps session report.',
+    'Call when the user says "done", "end", "report", "quit", or the session naturally concludes.',
+    'Returns view: session_report and a prompt Claude should run on the full transcript.',
+    'Report format and hire-signal rules vary by mode — only mock interview shows a PrepOps rubric signal.',
+    'Do NOT generate the report independently outside this tool.',
+  ].join(' '),
   inputSchema: {
     type: 'object',
     properties: {
-      session_token: { type: 'string', description: 'Session token from the start_* call' },
-      transcript:    { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } }, required: ['role','content'] }, description: 'Full conversation transcript' },
+      session_token: { type: 'string', description: 'Session token from start_session.' },
+      transcript:    { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } }, required: ['role','content'] }, description: 'Full conversation transcript.' },
     },
     required: ['session_token', 'transcript'],
   },
 };
 
-export async function generateSessionReport(
+export async function generateReport(
   input: { session_token: string; transcript: Array<{ role: string; content: string }> },
   env: Env,
 ): Promise<ToolResult> {
@@ -84,5 +90,12 @@ ${RUBRICS['hiring_signals'] ?? ''}`;
       prompt = `${CORE}\n\nGenerate a PrepOps session report for mode: ${config.mode}.\n\nExchanges: ${exchanges}\n\nTranscript:\n${transcript}`;
   }
 
-  return { prompt };
+  return {
+    view: 'session_report',
+    prompt,
+    mode:       config.mode,
+    difficulty: config.difficulty,
+    exchanges,
+    prepops_note: 'Run the prompt field through your reasoning to generate the PrepOps report. Display it as a formatted report block.',
+  };
 }
