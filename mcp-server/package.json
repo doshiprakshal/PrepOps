@@ -8,6 +8,7 @@
     "dev": "npm run bundle && wrangler dev",
     "deploy": "npm run bundle && wrangler deploy",
     "typecheck": "tsc --noEmit",
+    "test": "npm run bundle && vitest run",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
@@ -17,6 +18,7 @@
     "@cloudflare/workers-types": "^4.20241205.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
+    "vitest": "^4.1.10",
     "wrangler": "^3.91.0"
   }
 }
