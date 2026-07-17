@@ -1,9 +1,11 @@
 import type { Env } from './index.js';
 import { TOOL_DEFS, callTool } from './tools/index.js';
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 interface JsonRpcRequest {
   jsonrpc: '2.0';
-  id:      string | number | null;
+  id?:     string | number | null;
   method:  string;
   params?: unknown;
 }
@@ -15,20 +17,79 @@ interface JsonRpcResponse {
   error?:  { code: number; message: string; data?: unknown };
 }
 
-function ok(id: JsonRpcRequest['id'], result: unknown): JsonRpcResponse {
-  return { jsonrpc: '2.0', id, result };
+// Advertise the latest protocol version we support.
+// MCP clients negotiate: server MUST reply with a version ≤ the client's offer.
+// 2025-06-18 is the current stable version claude.ai uses.
+const PROTOCOL_VERSION = '2025-06-18';
+
+const CORS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id, Accept',
+  'Access-Control-Max-Age':       '86400',
+};
+
+// ── Structured logging ────────────────────────────────────────────────────────
+// Never log session tokens, secrets, or user content.
+
+function log(fields: Record<string, string | number | boolean | undefined>): void {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), ...fields }));
 }
 
-function err(id: JsonRpcRequest['id'], code: number, message: string): JsonRpcResponse {
-  return { jsonrpc: '2.0', id, error: { code, message } };
+// ── JSON-RPC helpers ──────────────────────────────────────────────────────────
+
+function ok(id: string | number | null | undefined, result: unknown): JsonRpcResponse {
+  return { jsonrpc: '2.0', id: id ?? null, result };
 }
 
-async function handleRequest(req: JsonRpcRequest, env: Env): Promise<JsonRpcResponse> {
+function rpcErr(id: string | number | null | undefined, code: number, message: string): JsonRpcResponse {
+  return { jsonrpc: '2.0', id: id ?? null, error: { code, message } };
+}
+
+// ── Response format: JSON or SSE ──────────────────────────────────────────────
+// MCP Streamable HTTP (2025-03-26+):
+//   - If client sends Accept: text/event-stream → respond with SSE
+//   - If client sends Accept: application/json  → respond with JSON
+//   - claude.ai sends both; we prefer SSE so claude.ai can stream
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+}
+
+function sseResponse(body: unknown, status = 200): Response {
+  // Streamable HTTP SSE: each response is a single "message" event
+  const data = `event: message\ndata: ${JSON.stringify(body)}\n\n`;
+  return new Response(data, {
+    status,
+    headers: {
+      ...CORS,
+      'Content-Type':  'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection':    'keep-alive',
+    },
+  });
+}
+
+function mcpResponse(payload: unknown, acceptSSE: boolean, status = 200): Response {
+  return acceptSSE ? sseResponse(payload, status) : jsonResponse(payload, status);
+}
+
+// ── Method dispatch ───────────────────────────────────────────────────────────
+// Returns null for notifications (they MUST NOT receive a response body).
+
+async function dispatch(
+  req: JsonRpcRequest,
+  env: Env,
+): Promise<JsonRpcResponse | null> {
+
   switch (req.method) {
 
     case 'initialize':
       return ok(req.id, {
-        protocolVersion: '2024-11-05',
+        protocolVersion: PROTOCOL_VERSION,
         capabilities:    { tools: {} },
         serverInfo:      { name: 'PrepOps', version: '2.0.0' },
         instructions: `PrepOps is a technical interview coaching engine for Infrastructure, DevOps, SRE, Cloud, and Platform Engineering. Claude provides all reasoning, conversation, and web research. PrepOps controls the session structure, phase, scoring, clue disclosure, and report format.
@@ -161,8 +222,11 @@ Trigger: user pastes a job description (300+ words containing Requirements/Respo
 PrepOps does not perform web search — Claude does.`,
       });
 
+    // Notifications MUST NOT receive a response (MCP spec §3.3)
     case 'notifications/initialized':
-      return ok(req.id, {});
+    case 'notifications/cancelled':
+    case 'notifications/progress':
+      return null;
 
     case 'ping':
       return ok(req.id, {});
@@ -172,7 +236,7 @@ PrepOps does not perform web search — Claude does.`,
 
     case 'tools/call': {
       const p = req.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
-      if (!p?.name) return err(req.id, -32602, 'Missing tool name');
+      if (!p?.name) return rpcErr(req.id, -32602, 'Missing tool name');
       try {
         const result = await callTool(p.name, p.arguments ?? {}, env);
         return ok(req.id, {
@@ -181,6 +245,7 @@ PrepOps does not perform web search — Claude does.`,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
+        log({ rpc: 'tools/call', tool: p.name, status: 500, error: msg });
         return ok(req.id, {
           content: [{ type: 'text', text: JSON.stringify({ error: msg }) }],
           isError: true,
@@ -189,47 +254,64 @@ PrepOps does not perform web search — Claude does.`,
     }
 
     default:
-      return err(req.id, -32601, `Method not found: ${req.method}`);
+      return rpcErr(req.id, -32601, `Method not found: ${req.method}`);
   }
 }
 
-const CORS = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
-  'Access-Control-Max-Age':       '86400',
-};
+// ── HTTP handler ──────────────────────────────────────────────────────────────
 
 export async function handleMCP(request: Request, env: Env): Promise<Response> {
-  if (request.method === 'OPTIONS') {
+  const method = request.method;
+  const accept = request.headers.get('Accept') ?? '';
+  const wantsSSE = accept.includes('text/event-stream');
+
+  log({ http: method, path: '/mcp' });
+
+  if (method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS });
   }
 
-  if (request.method !== 'POST') {
+  if (method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405, headers: CORS });
   }
 
   let body: unknown;
   try {
     body = await request.json();
-  } catch {
-    return new Response(
-      JSON.stringify(err(null, -32700, 'Parse error')),
-      { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } },
-    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    log({ rpc: 'parse', status: 400, error: msg });
+    return mcpResponse(rpcErr(null, -32700, 'Parse error'), wantsSSE, 400);
   }
 
-  // Support both single request and batched requests
-  const isBatch = Array.isArray(body);
-  const requests: JsonRpcRequest[] = isBatch ? (body as JsonRpcRequest[]) : [body as JsonRpcRequest];
+  const isBatch  = Array.isArray(body);
+  const reqs: JsonRpcRequest[] = isBatch
+    ? (body as JsonRpcRequest[])
+    : [body as JsonRpcRequest];
 
-  const responses = await Promise.all(
-    requests.map(r => handleRequest(r, env).catch(e => err(r.id ?? null, -32603, String(e)))),
-  );
+  const results: JsonRpcResponse[] = [];
 
-  const payload = isBatch ? responses : responses[0];
-  return new Response(JSON.stringify(payload), {
-    status:  200,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
+  for (const req of reqs) {
+    log({ rpc: req.method, id: String(req.id ?? 'notify') });
+    try {
+      const res = await dispatch(req, env);
+      if (res !== null) {
+        results.push(res);
+        log({ rpc: req.method, status: 200 });
+      }
+      // null → notification, no response body
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log({ rpc: req.method, status: 500, error: msg });
+      results.push(rpcErr(req.id, -32603, `Internal error: ${msg}`));
+    }
+  }
+
+  // Notification-only batch → 204 No Content
+  if (results.length === 0) {
+    return new Response(null, { status: 204, headers: CORS });
+  }
+
+  const payload = isBatch ? results : results[0];
+  return mcpResponse(payload, wantsSSE);
 }
