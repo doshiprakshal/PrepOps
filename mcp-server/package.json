@@ -2,23 +2,15 @@
   "name": "prepops-mcp-server",
   "version": "2.0.0",
   "private": true,
-  "description": "PrepOps Remote MCP Server — Cloudflare Worker",
+  "description": "PrepOps MCP Server — platform-agnostic core",
   "scripts": {
-    "bundle": "tsx scripts/bundle-assets.ts",
-    "dev": "npm run bundle && wrangler dev",
-    "deploy": "npm run bundle && wrangler deploy",
+    "bundle":    "tsx scripts/bundle-assets.ts",
     "typecheck": "tsc --noEmit",
-    "test": "npm run bundle && vitest run",
-    "lint": "eslint src --ext .ts"
-  },
-  "dependencies": {
-    "hono": "^4.6.0"
+    "test":      "npm run bundle && vitest run"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241205.0",
-    "tsx": "^4.19.0",
+    "tsx":        "^4.19.0",
     "typescript": "^5.6.0",
-    "vitest": "^4.1.10",
-    "wrangler": "^3.91.0"
+    "vitest":     "^4.1.10"
   }
 }

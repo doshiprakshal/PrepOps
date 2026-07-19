@@ -1,4 +1,4 @@
-import type { Env } from '../index.js';
+import type { Env } from '../env.js';
 
 export interface Tool {
   name:        string;

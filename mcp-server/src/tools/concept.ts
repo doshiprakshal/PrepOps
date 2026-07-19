@@ -1,5 +1,5 @@
 import type { Tool, ToolResult } from './index.js';
-import type { Env } from '../index.js';
+import type { Env } from '../env.js';
 import { signToken, verifyToken, updateToken } from '../session/token.js';
 import type { SessionState, ConceptSubMode } from '../session/types.js';
 import { CORE, PROMPTS, KNOWLEDGE, TOPICS } from '../assets/engine.js';
